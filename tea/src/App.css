@@ -1,0 +1,37 @@
+.ascii-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: #10111a;
+}
+
+.top-right-header {
+  position: fixed;
+  top: 1.5rem;
+  right: 2rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.teapot-text {
+  font-family: var(--sans, system-ui, -apple-system, sans-serif);
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .top-right-header {
+    top: 1rem;
+    right: 1.25rem;
+  }
+
+  .teapot-text {
+    font-size: 1.35rem;
+  }
+}
