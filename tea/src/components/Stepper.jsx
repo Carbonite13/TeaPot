@@ -118,6 +118,7 @@ export default function Stepper({
   disableStepIndicators = false,
   renderStepIndicator,
   showFooter = true,
+  showNextButton = true,
   backButtonText = 'Back',
   nextButtonText = 'Continue',
   completeButtonText = 'Complete',
@@ -483,19 +484,21 @@ export default function Stepper({
                   <HugeiconsIcon icon={ArrowLeft01Icon} size={16} strokeWidth={2} />
                   <span>{backButtonText}</span>
                 </button>
-                <button
-                  type="button"
-                  {...nextRest}
-                  className={`stepper__button stepper__button--next ${nextClass}`.trim()}
-                  tabIndex={completed ? -1 : nextRest.tabIndex}
-                  onClick={event => {
-                    onNextClick?.(event);
-                    if (!event.defaultPrevented) go(current + 1);
-                  }}
-                >
-                  <span>{nextLabel}</span>
-                  <HugeiconsIcon icon={isLast ? Tick02Icon : ArrowRight01Icon} size={16} strokeWidth={2} />
-                </button>
+                {showNextButton && (
+                  <button
+                    type="button"
+                    {...nextRest}
+                    className={`stepper__button stepper__button--next ${nextClass}`.trim()}
+                    tabIndex={completed ? -1 : nextRest.tabIndex}
+                    onClick={event => {
+                      onNextClick?.(event);
+                      if (!event.defaultPrevented) go(current + 1);
+                    }}
+                  >
+                    <span>{nextLabel}</span>
+                    <HugeiconsIcon icon={isLast ? Tick02Icon : ArrowRight01Icon} size={16} strokeWidth={2} />
+                  </button>
+                )}
               </div>
             </div>
           </div>

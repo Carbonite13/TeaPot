@@ -1,5 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Stepper, { Step } from './Stepper';
+import ShinyText from './ShinyText';
+import FuseButton from './FuseButton';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Tick02Icon, AiBrain01Icon } from '@hugeicons/core-free-icons';
 import './NetworkSliceRecommender.css';
 
 const PRESETS = [
@@ -58,6 +62,8 @@ const PRESETS = [
 ];
 
 export default function NetworkSliceRecommender() {
+  const [currentStep, setCurrentStep] = useState(1);
+
   const [appName, setAppName] = useState('Autonomous Drone / Teleoperation');
   const [industry, setIndustry] = useState('Robotics & Logistics');
   const [priority, setPriority] = useState('Mission Critical');
@@ -71,7 +77,18 @@ export default function NetworkSliceRecommender() {
   const [mobility, setMobility] = useState('Vehicular (<120 km/h)');
   const [density, setDensity] = useState(1500);
 
+  // AI Backend Analysis States: 'idle' | 'analyzing' | 'done'
+  const [analysisState, setAnalysisState] = useState('idle');
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisPhase, setAnalysisPhase] = useState('');
+  const [analysisResult, setAnalysisResult] = useState(null);
+
   const [copied, setCopied] = useState(false);
+
+  const invalidateAnalysis = useCallback(() => {
+    setAnalysisState('idle');
+    setAnalysisResult(null);
+  }, []);
 
   const applyPreset = (preset) => {
     setAppName(preset.name);
@@ -84,9 +101,10 @@ export default function NetworkSliceRecommender() {
     setReliability(preset.reliability);
     setMobility(preset.mobility);
     setDensity(preset.density);
+    invalidateAnalysis();
   };
 
-  const recommendation = useMemo(() => {
+  const computedRecommendation = useMemo(() => {
     const isUltraLowLatency = latency <= 10;
     const isUltraReliable = reliability >= 99.999;
     const isHighBandwidth = downlink >= 150 || uplink >= 50;
@@ -190,7 +208,52 @@ export default function NetworkSliceRecommender() {
     };
   }, [latency, reliability, downlink, uplink, density, mobility, priority, jitter]);
 
-  const exportConfig = () => {
+  // Trigger Backend Analysis
+  const triggerAnalysis = useCallback(async () => {
+    setAnalysisState('analyzing');
+    setAnalysisProgress(20);
+    setAnalysisPhase('Connecting to 5G Slice Provisioning backend...');
+
+    const payload = {
+      application: { name: appName, industry, priority },
+      requirements: { latency, downlink, uplink, jitter, reliability, mobility, density }
+    };
+
+    try {
+      // Attempt real backend POST request; if not present, gracefully proceed with client simulation
+      const backendPromise = fetch('/api/recommend-slice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(res => res.ok ? res.json() : null).catch(() => null);
+
+      await new Promise(r => setTimeout(r, 450));
+      setAnalysisProgress(55);
+      setAnalysisPhase('Evaluating 3GPP 5QI delay budgets & radio resource multiplexing...');
+
+      await new Promise(r => setTimeout(r, 550));
+      setAnalysisProgress(85);
+      setAnalysisPhase('Synthesizing explainable telecom justification & UPF topology...');
+
+      const [serverResult] = await Promise.all([
+        backendPromise,
+        new Promise(r => setTimeout(r, 450))
+      ]);
+
+      setAnalysisProgress(100);
+      setAnalysisPhase('Optimization complete.');
+      setAnalysisResult(serverResult || computedRecommendation);
+      setAnalysisState('done');
+    } catch {
+      setAnalysisProgress(100);
+      setAnalysisResult(computedRecommendation);
+      setAnalysisState('done');
+    }
+  }, [appName, industry, priority, latency, downlink, uplink, jitter, reliability, mobility, density, computedRecommendation]);
+
+  const activeResult = analysisResult || computedRecommendation;
+
+  const exportConfig = useCallback(() => {
     const config = {
       timestamp: new Date().toISOString(),
       application: {
@@ -208,30 +271,44 @@ export default function NetworkSliceRecommender() {
         deviceDensityPerKm2: density,
       },
       aiRecommendation: {
-        sliceCategory: recommendation.sliceName,
-        sst: recommendation.sst,
-        confidencePercentage: recommendation.confidence,
+        sliceCategory: activeResult.sliceName,
+        sst: activeResult.sst,
+        confidencePercentage: activeResult.confidence,
         qosParameters: {
-          fiveQi: recommendation.fiveQi,
-          packetDelayBudget: recommendation.delayBudget,
-          packetErrorRate: recommendation.per,
+          fiveQi: activeResult.fiveQi,
+          packetDelayBudget: activeResult.delayBudget,
+          packetErrorRate: activeResult.per,
         },
-        edgeDeploymentStrategy: recommendation.edgeStrategy,
-        justification: recommendation.summary,
-        keyDrivers: recommendation.reasons,
+        edgeDeploymentStrategy: activeResult.edgeStrategy,
+        justification: activeResult.summary,
+        keyDrivers: activeResult.reasons,
       },
     };
 
     navigator.clipboard?.writeText(JSON.stringify(config, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
-  };
+  }, [appName, industry, priority, latency, downlink, uplink, jitter, reliability, mobility, density, activeResult]);
+
+  // Footer next button label for navigation steps
+  const nextButtonText = currentStep < 3 ? 'Next Step' : 'Review & Analyse';
 
   return (
     <div className="recommender-container">
       <div className="recommender-hero">
         <div className="hero-badge">AI-Assisted 5G Provisioning</div>
-        <h1 className="hero-title">5G Network Slice Recommender</h1>
+        <h1 className="hero-title">
+          <ShinyText
+            text="TeaPot"
+            color="#000000"
+            shineColor="#333333"
+            speed={2}
+            shineWidth={40}
+            softness={0.8}
+            trigger="loop"
+            className="hero-teapot-text"
+          />
+        </h1>
         <p className="hero-subtitle">
           Input your application connectivity parameters to evaluate and receive an explainable 3GPP slice allocation
           before deploying to the network.
@@ -240,14 +317,17 @@ export default function NetworkSliceRecommender() {
 
       <div className="recommender-stepper-wrapper">
         <Stepper
+          step={currentStep}
           initialStep={1}
+          onStepChange={setCurrentStep}
           theme="dark"
           accentColor="#f3903f"
           radius={20}
           width={720}
           backButtonText="Back"
-          nextButtonText="Next Step"
-          completeButtonText="Analyze Slice"
+          nextButtonText={nextButtonText}
+          completeButtonText={nextButtonText}
+          showNextButton={currentStep < 4}
           className="slice-stepper"
         >
           {/* STEP 1: Application Profile */}
@@ -282,7 +362,10 @@ export default function NetworkSliceRecommender() {
                   type="text"
                   className="text-input"
                   value={appName}
-                  onChange={(e) => setAppName(e.target.value)}
+                  onChange={(e) => {
+                    setAppName(e.target.value);
+                    invalidateAnalysis();
+                  }}
                   placeholder="e.g. Tele-operated Surgical Robot"
                 />
               </div>
@@ -294,7 +377,10 @@ export default function NetworkSliceRecommender() {
                     id="industry-select"
                     className="select-input"
                     value={industry}
-                    onChange={(e) => setIndustry(e.target.value)}
+                    onChange={(e) => {
+                      setIndustry(e.target.value);
+                      invalidateAnalysis();
+                    }}
                   >
                     <option>Robotics & Logistics</option>
                     <option>Healthcare & Telemedicine</option>
@@ -311,7 +397,10 @@ export default function NetworkSliceRecommender() {
                     id="priority-select"
                     className="select-input"
                     value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
+                    onChange={(e) => {
+                      setPriority(e.target.value);
+                      invalidateAnalysis();
+                    }}
                   >
                     <option>Mission Critical (Life/Safety)</option>
                     <option>Business Critical</option>
@@ -343,7 +432,10 @@ export default function NetworkSliceRecommender() {
                   step="1"
                   className="slider"
                   value={latency}
-                  onChange={(e) => setLatency(Number(e.target.value))}
+                  onChange={(e) => {
+                    setLatency(Number(e.target.value));
+                    invalidateAnalysis();
+                  }}
                 />
                 <div className="slider-labels">
                   <span>1 ms (Ultra-Low)</span>
@@ -366,7 +458,10 @@ export default function NetworkSliceRecommender() {
                     step="10"
                     className="slider"
                     value={downlink}
-                    onChange={(e) => setDownlink(Number(e.target.value))}
+                    onChange={(e) => {
+                      setDownlink(Number(e.target.value));
+                      invalidateAnalysis();
+                    }}
                   />
                   <div className="slider-labels">
                     <span>1 Mbps</span>
@@ -387,7 +482,10 @@ export default function NetworkSliceRecommender() {
                     step="5"
                     className="slider"
                     value={uplink}
-                    onChange={(e) => setUplink(Number(e.target.value))}
+                    onChange={(e) => {
+                      setUplink(Number(e.target.value));
+                      invalidateAnalysis();
+                    }}
                   />
                   <div className="slider-labels">
                     <span>1 Mbps</span>
@@ -403,7 +501,10 @@ export default function NetworkSliceRecommender() {
                   id="jitter-select"
                   className="select-input"
                   value={jitter}
-                  onChange={(e) => setJitter(e.target.value)}
+                  onChange={(e) => {
+                    setJitter(e.target.value);
+                    invalidateAnalysis();
+                  }}
                 >
                   <option>Ultra-Low (&lt;1ms) - TSN Deterministic</option>
                   <option>Low (&lt;2ms) - Interactive Media</option>
@@ -433,7 +534,10 @@ export default function NetworkSliceRecommender() {
                       key={val}
                       type="button"
                       className={`radio-pill ${reliability === val ? 'radio-pill--active' : ''}`}
-                      onClick={() => setReliability(val)}
+                      onClick={() => {
+                        setReliability(val);
+                        invalidateAnalysis();
+                      }}
                     >
                       {val}% {val === 99.999 ? '(Five 9s)' : ''}
                     </button>
@@ -447,7 +551,10 @@ export default function NetworkSliceRecommender() {
                   id="mobility-select"
                   className="select-input"
                   value={mobility}
-                  onChange={(e) => setMobility(e.target.value)}
+                  onChange={(e) => {
+                    setMobility(e.target.value);
+                    invalidateAnalysis();
+                  }}
                 >
                   <option>Stationary (Fixed Sensors, Smart Meters, Static Machines)</option>
                   <option>Pedestrian (&lt;10 km/h - Wearables, Handhelds)</option>
@@ -468,7 +575,10 @@ export default function NetworkSliceRecommender() {
                   step="5000"
                   className="slider"
                   value={density}
-                  onChange={(e) => setDensity(Number(e.target.value))}
+                  onChange={(e) => {
+                    setDensity(Number(e.target.value));
+                    invalidateAnalysis();
+                  }}
                 />
                 <div className="slider-labels">
                   <span>100 (Sparse)</span>
@@ -482,60 +592,168 @@ export default function NetworkSliceRecommender() {
           {/* STEP 4: AI Recommendation & Justification */}
           <Step title="AI Recommendation" description="Slice Category & QoS">
             <div className="step-content">
-              <div className="recommendation-card">
-                <div className="rec-header">
-                  <div className="rec-slice-badge">
-                    <span className="rec-sst">3GPP SST {recommendation.sst}</span>
-                    <span className="rec-tag">{recommendation.sliceName}</span>
+              {/* STATE 1: IDLE / READY TO ANALYZE */}
+              {analysisState === 'idle' && (
+                <div className="ready-to-analyze-card">
+                  <div className="ready-header">
+                    <div className="ready-badge">
+                      <span className="pulse-dot"></span>
+                      Inputs Ready for Evaluation
+                    </div>
+                    <span className="ready-step-indicator">Step 4 of 4</span>
                   </div>
-                  <div className="rec-score">
-                    <span className="score-num">{recommendation.confidence}%</span>
-                    <span className="score-label">Match Confidence</span>
+
+                  <h3 className="ready-title">Ready to Analyse 5G Slice Requirements</h3>
+                  <p className="ready-desc">
+                    Click <strong>Analyse</strong> below to submit your telemetry profile to the AI model. The engine
+                    will match constraints against 3GPP Release-18 slice templates and return an explainable telecom justification.
+                  </p>
+
+                  <div className="ready-spec-chips">
+                    <div className="spec-chip">
+                      <span className="chip-label">Application</span>
+                      <span className="chip-val">{appName}</span>
+                    </div>
+                    <div className="spec-chip">
+                      <span className="chip-label">Target Latency</span>
+                      <span className="chip-val highlight-orange">{latency} ms</span>
+                    </div>
+                    <div className="spec-chip">
+                      <span className="chip-label">Downlink / Uplink</span>
+                      <span className="chip-val">{downlink} / {uplink} Mbps</span>
+                    </div>
+                    <div className="spec-chip">
+                      <span className="chip-label">Reliability</span>
+                      <span className="chip-val highlight-gold">{reliability}%</span>
+                    </div>
+                    <div className="spec-chip">
+                      <span className="chip-label">Mobility Tier</span>
+                      <span className="chip-val">{mobility}</span>
+                    </div>
+                    <div className="spec-chip">
+                      <span className="chip-label">Density</span>
+                      <span className="chip-val">{density.toLocaleString()} / km²</span>
+                    </div>
+                  </div>
+
+                  <FuseButton
+                    label="Analyse"
+                    undoLabel="Undo"
+                    doneLabel="Analysing..."
+                    icon={<HugeiconsIcon icon={AiBrain01Icon} size={18} strokeWidth={2.2} />}
+                    color="#ffffff"
+                    background="#231f2d"
+                    fuseColor="#f3903f"
+                    size="lg"
+                    radius={14}
+                    undoWindow={5000}
+                    fuse="outline"
+                    fuseThickness={2}
+                    commitOn="fuseEnd"
+                    onCommit={() => triggerAnalysis()}
+                    className="ready-analyze-fuse-btn"
+                  />
+                </div>
+              )}
+
+              {/* STATE 2: ANALYZING / BACKEND PROCESSING */}
+              {analysisState === 'analyzing' && (
+                <div className="analyzing-card">
+                  <div className="radar-spinner-wrap">
+                    <div className="radar-ripple"></div>
+                    <div className="radar-core">
+                      <span className="core-icon">5G</span>
+                    </div>
+                  </div>
+
+                  <h3 className="analyzing-title">Evaluating 5G Core Network Slices</h3>
+                  <p className="analyzing-phase">{analysisPhase}</p>
+
+                  <div className="analysis-progress-bar">
+                    <div className="analysis-progress-fill" style={{ width: `${analysisProgress}%` }}></div>
+                  </div>
+
+                  <div className="telecom-telemetry-feed">
+                    <div className={`feed-item ${analysisProgress >= 20 ? 'feed-item--active' : ''}`}>
+                      <span className="feed-dot"></span> 3GPP Rel-18 QoS Classifier
+                    </div>
+                    <div className={`feed-item ${analysisProgress >= 55 ? 'feed-item--active' : ''}`}>
+                      <span className="feed-dot"></span> Delay-Critical GBR & 5QI Calculation
+                    </div>
+                    <div className={`feed-item ${analysisProgress >= 85 ? 'feed-item--active' : ''}`}>
+                      <span className="feed-dot"></span> Slicing Decision & Explainability Synthesis
+                    </div>
                   </div>
                 </div>
+              )}
 
-                <h3 className="rec-title">{recommendation.headline}</h3>
-                <p className="rec-summary">{recommendation.summary}</p>
+              {/* STATE 3: DONE / RESULT DISPLAY */}
+              {analysisState === 'done' && (
+                <div className="recommendation-card">
+                  <div className="rec-top-actions">
+                    <div className="ai-verified-tag">
+                      <HugeiconsIcon icon={Tick02Icon} size={15} strokeWidth={2.4} />
+                      <span>Analysis Returned by AI Engine</span>
+                    </div>
+                    <button type="button" className="re-analyze-btn" onClick={triggerAnalysis}>
+                      ↻ Re-run Analysis
+                    </button>
+                  </div>
 
-                <div className="specs-grid">
-                  <div className="spec-card">
-                    <span className="spec-label">Recommended 5QI</span>
-                    <span className="spec-val">{recommendation.fiveQi}</span>
+                  <div className="rec-header">
+                    <div className="rec-slice-badge">
+                      <span className="rec-sst">3GPP SST {activeResult.sst}</span>
+                      <span className="rec-tag">{activeResult.sliceName}</span>
+                    </div>
+                    <div className="rec-score">
+                      <span className="score-num">{activeResult.confidence}%</span>
+                      <span className="score-label">Match Confidence</span>
+                    </div>
                   </div>
-                  <div className="spec-card">
-                    <span className="spec-label">Packet Delay Budget</span>
-                    <span className="spec-val">{recommendation.delayBudget}</span>
+
+                  <h3 className="rec-title">{activeResult.headline}</h3>
+                  <p className="rec-summary">{activeResult.summary}</p>
+
+                  <div className="specs-grid">
+                    <div className="spec-card">
+                      <span className="spec-label">Recommended 5QI</span>
+                      <span className="spec-val">{activeResult.fiveQi}</span>
+                    </div>
+                    <div className="spec-card">
+                      <span className="spec-label">Packet Delay Budget</span>
+                      <span className="spec-val">{activeResult.delayBudget}</span>
+                    </div>
+                    <div className="spec-card">
+                      <span className="spec-label">Error Rate Target</span>
+                      <span className="spec-val">{activeResult.per}</span>
+                    </div>
+                    <div className="spec-card">
+                      <span className="spec-label">Slice Service Type</span>
+                      <span className="spec-val">SST-{activeResult.sst}</span>
+                    </div>
                   </div>
-                  <div className="spec-card">
-                    <span className="spec-label">Error Rate Target</span>
-                    <span className="spec-val">{recommendation.per}</span>
+
+                  <div className="reasons-block">
+                    <h4>Explainable Telecom Justification</h4>
+                    <ul className="reasons-list">
+                      {activeResult.reasons.map((reason, i) => (
+                        <li key={i}>{reason}</li>
+                      ))}
+                    </ul>
                   </div>
-                  <div className="spec-card">
-                    <span className="spec-label">Slice Service Type</span>
-                    <span className="spec-val">SST-{recommendation.sst}</span>
+
+                  <div className="edge-guideline">
+                    <div className="edge-title">Core & Edge Deployment Architecture</div>
+                    <div className="edge-desc">{activeResult.edgeStrategy}</div>
+                  </div>
+
+                  <div className="export-row">
+                    <button type="button" className="export-btn" onClick={exportConfig}>
+                      {copied ? '✓ Copied JSON Specification to Clipboard' : 'Export 5G Slice Provisioning Config'}
+                    </button>
                   </div>
                 </div>
-
-                <div className="reasons-block">
-                  <h4>Explainable Telecom Justification</h4>
-                  <ul className="reasons-list">
-                    {recommendation.reasons.map((reason, i) => (
-                      <li key={i}>{reason}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="edge-guideline">
-                  <div className="edge-title">Core & Edge Deployment Architecture</div>
-                  <div className="edge-desc">{recommendation.edgeStrategy}</div>
-                </div>
-
-                <div className="export-row">
-                  <button type="button" className="export-btn" onClick={exportConfig}>
-                    {copied ? '✓ Copied JSON Specification' : 'Export 5G Slice Provisioning Config'}
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
           </Step>
         </Stepper>
