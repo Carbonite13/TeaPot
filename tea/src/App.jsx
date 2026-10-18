@@ -1,5 +1,6 @@
 import GradientASCII from './components/GradientASCII'
 import ShinyText from './components/ShinyText'
+import NetworkSliceRecommender from './components/NetworkSliceRecommender'
 import './App.css'
 
 function App() {
@@ -26,6 +27,9 @@ function App() {
           className="teapot-text"
         />
       </header>
+      <main className="app-main">
+        <NetworkSliceRecommender />
+      </main>
     </>
   )
 }

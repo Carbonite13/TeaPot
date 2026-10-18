@@ -10,7 +10,7 @@
   position: fixed;
   top: 1.5rem;
   right: 2rem;
-  z-index: 10;
+  z-index: 20;
   display: flex;
   align-items: center;
   pointer-events: auto;
@@ -23,6 +23,14 @@
   letter-spacing: -0.02em;
   line-height: 1;
   user-select: none;
+}
+
+.app-main {
+  position: relative;
+  z-index: 10;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 640px) {
