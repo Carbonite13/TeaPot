@@ -1,83 +1,328 @@
 import { useState, useMemo, useCallback } from 'react';
 import Stepper, { Step } from './Stepper';
-import ShinyText from './ShinyText';
-import FuseButton from './FuseButton';
+import AnalyseButton from './AnalyseButton';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Tick02Icon, AiBrain01Icon } from '@hugeicons/core-free-icons';
+import { Tick02Icon, AiSparklesIcon, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
 import './NetworkSliceRecommender.css';
 
-const PRESETS = [
-  {
-    id: 'teleoperation',
-    name: 'Autonomous Drone / Teleoperation',
-    industry: 'Robotics & Logistics',
-    priority: 'Mission Critical',
-    latency: 8,
-    downlink: 120,
-    uplink: 45,
-    jitter: 'Ultra-Low (<1ms)',
-    reliability: 99.999,
-    mobility: 'Vehicular (<120 km/h)',
-    density: 1500,
-  },
-  {
-    id: 'xr-streaming',
-    name: 'Cloud Gaming & Immersive XR',
-    industry: 'Media & Entertainment',
-    priority: 'Business Critical',
-    latency: 18,
-    downlink: 350,
-    uplink: 30,
-    jitter: 'Low (<2ms)',
-    reliability: 99.9,
-    mobility: 'Pedestrian (<10 km/h)',
-    density: 12000,
-  },
-  {
-    id: 'smart-metering',
-    name: 'Smart Grid & Metering Sensors',
-    industry: 'Energy & Utilities',
-    priority: 'Standard',
-    latency: 120,
-    downlink: 0.5,
-    uplink: 1.2,
-    jitter: 'Tolerant (>10ms)',
-    reliability: 99.9,
-    mobility: 'Stationary',
-    density: 450000,
-  },
-  {
-    id: 'connected-v2x',
-    name: 'Connected Autonomous Vehicles (C-V2X)',
-    industry: 'Automotive & Transport',
-    priority: 'Mission Critical',
-    latency: 5,
-    downlink: 80,
-    uplink: 60,
-    jitter: 'Ultra-Low (<1ms)',
-    reliability: 99.999,
-    mobility: 'High-Speed (>200 km/h)',
-    density: 25000,
-  },
-];
+function extractSpecsFromPrompt(text) {
+  const lower = text.toLowerCase();
+
+  // Latency (ms)
+  let detectedLatency = null;
+  const latMatch = lower.match(/(?:sub-?|<|<=|around|~)?\s*(\d+(?:\.\d+)?)\s*(?:ms|milliseconds?)/);
+  if (latMatch) {
+    detectedLatency = Math.max(1, Math.round(parseFloat(latMatch[1])));
+  }
+
+  // Downlink Throughput (Mbps)
+  let detectedDownlink = null;
+  const dlMatch =
+    lower.match(/(?:downlink|download|dl|bandwidth|throughput|stream)[^\d]*(\d+(?:\.\d+)?)\s*(?:mbps|gbps|kbps)/) ||
+    lower.match(/(\d+(?:\.\d+)?)\s*(?:mbps|gbps|kbps)\s*(?:downlink|download|dl)/) ||
+    lower.match(/(\d+(?:\.\d+)?)\s*(?:mbps|gbps|kbps)/);
+  if (dlMatch) {
+    let val = parseFloat(dlMatch[1]);
+    if (dlMatch[0].includes('gbps')) val *= 1000;
+    else if (dlMatch[0].includes('kbps')) val /= 1000;
+    detectedDownlink = val >= 1 ? Math.round(val) : parseFloat(val.toFixed(3));
+  }
+
+  // Uplink Throughput (Mbps)
+  let detectedUplink = null;
+  const ulMatch =
+    lower.match(/(?:uplink|upload|ul)[^\d]*(\d+(?:\.\d+)?)\s*(?:mbps|gbps|kbps)/) ||
+    lower.match(/(\d+(?:\.\d+)?)\s*(?:mbps|gbps|kbps)\s*(?:uplink|upload|ul)/);
+  if (ulMatch) {
+    let val = parseFloat(ulMatch[1]);
+    if (ulMatch[0].includes('gbps')) val *= 1000;
+    else if (ulMatch[0].includes('kbps')) val /= 1000;
+    detectedUplink = val >= 1 ? Math.round(val) : parseFloat(val.toFixed(3));
+  }
+
+  // Reliability (%)
+  let detectedReliability = null;
+  const relMatch = lower.match(/(?:reliability|sla|guarantee|uptime)[^\d]*(\d{2}(?:\.\d+)?)\s*%/);
+  if (relMatch) {
+    detectedReliability = parseFloat(relMatch[1]);
+  } else if (lower.includes('five 9s') || lower.includes('99.999')) {
+    detectedReliability = 99.999;
+  } else if (lower.includes('four 9s') || lower.includes('99.99')) {
+    detectedReliability = 99.99;
+  } else if (lower.includes('three 9s') || lower.includes('99.9')) {
+    detectedReliability = 99.9;
+  }
+
+  // Mobility
+  let detectedMobility = 'Stationary';
+  if (
+    lower.includes('high-speed') ||
+    lower.includes('high speed') ||
+    lower.includes('train') ||
+    lower.includes('rail') ||
+    lower.includes('>200')
+  ) {
+    detectedMobility = 'High-Speed (>200 km/h)';
+  } else if (
+    lower.includes('vehicle') ||
+    lower.includes('vehicular') ||
+    lower.includes('drone') ||
+    lower.includes('uav') ||
+    lower.includes('car') ||
+    lower.includes('transit') ||
+    lower.includes('platoon') ||
+    lower.includes('automotive') ||
+    lower.includes('v2x') ||
+    lower.includes('120 km/h')
+  ) {
+    detectedMobility = 'Vehicular (<120 km/h)';
+  } else if (
+    lower.includes('pedestrian') ||
+    lower.includes('wearable') ||
+    lower.includes('handheld') ||
+    lower.includes('walking') ||
+    lower.includes('phone') ||
+    lower.includes('mobile user')
+  ) {
+    detectedMobility = 'Pedestrian (<10 km/h)';
+  } else if (
+    lower.includes('stationary') ||
+    lower.includes('sensor') ||
+    lower.includes('meter') ||
+    lower.includes('smart grid') ||
+    lower.includes('fixed') ||
+    lower.includes('static')
+  ) {
+    detectedMobility = 'Stationary';
+  }
+
+  // Density (devices/km²)
+  let detectedDensity = null;
+  const densityMatch = lower.match(/(\d[\d,]*)\s*(?:devices|sensors|nodes|meters|connections)/);
+  if (densityMatch) {
+    detectedDensity = parseInt(densityMatch[1].replace(/,/g, ''), 10);
+  }
+
+  // Domain categorization heuristics
+  const isV2XDomain =
+    lower.includes('v2x') ||
+    lower.includes('drone') ||
+    lower.includes('uav') ||
+    lower.includes('vehicle') ||
+    lower.includes('platoon') ||
+    lower.includes('traffic') ||
+    lower.includes('automotive') ||
+    lower.includes('highway') ||
+    lower.includes('roadside');
+  const isURLLCDomain =
+    lower.includes('surgery') ||
+    lower.includes('surgical') ||
+    lower.includes('robot') ||
+    lower.includes('haptic') ||
+    lower.includes('mission critical') ||
+    lower.includes('life') ||
+    lower.includes('safety') ||
+    lower.includes('deterministic') ||
+    lower.includes('tsn') ||
+    lower.includes('automation') ||
+    lower.includes('teleoperation') ||
+    lower.includes('factory');
+  const isMMTCDomain =
+    lower.includes('sensor') ||
+    lower.includes('meter') ||
+    lower.includes('smart grid') ||
+    lower.includes('iot') ||
+    lower.includes('massive') ||
+    lower.includes('agriculture') ||
+    lower.includes('telemetry') ||
+    lower.includes('environmental') ||
+    lower.includes('utility');
+  const isEMBBDomain =
+    lower.includes('video') ||
+    lower.includes('stream') ||
+    lower.includes('xr') ||
+    lower.includes('vr') ||
+    lower.includes('ar') ||
+    lower.includes('gaming') ||
+    lower.includes('broadband') ||
+    lower.includes('4k') ||
+    lower.includes('8k') ||
+    lower.includes('multimedia') ||
+    lower.includes('metaverse');
+
+  if (detectedLatency === null) {
+    if (isURLLCDomain) detectedLatency = 5;
+    else if (isV2XDomain) detectedLatency = 8;
+    else if (isEMBBDomain) detectedLatency = 18;
+    else if (isMMTCDomain) detectedLatency = 120;
+    else detectedLatency = 20;
+  }
+
+  if (detectedDownlink === null) {
+    if (isEMBBDomain) detectedDownlink = 350;
+    else if (isV2XDomain) detectedDownlink = 80;
+    else if (isURLLCDomain) detectedDownlink = 120;
+    else if (isMMTCDomain) detectedDownlink = 0.5;
+    else detectedDownlink = 50;
+  }
+
+  if (detectedUplink === null) {
+    if (isV2XDomain) detectedUplink = 45;
+    else if (isURLLCDomain) detectedUplink = 45;
+    else if (isEMBBDomain) detectedUplink = 30;
+    else if (isMMTCDomain) detectedUplink = 1.2;
+    else detectedUplink = 15;
+  }
+
+  if (detectedReliability === null) {
+    if (isURLLCDomain || isV2XDomain) detectedReliability = 99.999;
+    else detectedReliability = 99.9;
+  }
+
+  if (detectedDensity === null) {
+    if (isMMTCDomain) detectedDensity = 450000;
+    else if (isV2XDomain) detectedDensity = 25000;
+    else if (isEMBBDomain) detectedDensity = 12000;
+    else detectedDensity = 1500;
+  }
+
+  return {
+    latency: detectedLatency,
+    downlink: detectedDownlink,
+    uplink: detectedUplink,
+    reliability: detectedReliability,
+    mobility: detectedMobility,
+    density: detectedDensity,
+    domains: { isV2XDomain, isURLLCDomain, isMMTCDomain, isEMBBDomain },
+  };
+}
+
+function generatePromptRecommendation(specs) {
+  const { latency, downlink, uplink, reliability, mobility, density, domains } = specs;
+  const delayBudget = `${latency} ms`;
+  const per = reliability >= 99.999 ? '10⁻⁶' : '10⁻³';
+
+  // 1. V2X
+  if (domains.isV2XDomain || ((mobility.includes('Vehicular') || mobility.includes('High-Speed')) && latency <= 15)) {
+    return {
+      sliceName: 'V2X',
+      sst: 4,
+      confidence: 98,
+      fiveQi: 83,
+      delayBudget,
+      per,
+      headline: 'Vehicle-to-Everything (V2X) Dedicated Slice',
+      summary: `Analyzed from your prompt: High mobility (${mobility}) with strict latency (${latency} ms) and ${reliability}% reliability. Standard cellular routing incurs handover latency; a 3GPP SST-4 slice provides direct sidelink PC5 connectivity and dedicated pre-emptive radio scheduling.`,
+      reasons: [
+        `Natural language prompt highlights vehicular/mobile dynamics (${mobility}), requiring predictive beam tracking.`,
+        `Extracted latency threshold (${latency} ms) demands direct Vehicle-to-Infrastructure (V2I) QoS bearer mapping.`,
+        `Mission-critical safety profile prioritizes Guaranteed Bit Rate (GBR) with preemption flags enabled.`,
+      ],
+      edgeStrategy: 'Roadside Unit (RSU) / Regional MEC UPF with Multi-access PDU sessions',
+    };
+  }
+
+  // 2. mMTC
+  if (domains.isMMTCDomain || density >= 100000 || (latency > 60 && downlink < 10)) {
+    return {
+      sliceName: 'mMTC',
+      sst: 3,
+      confidence: 96,
+      fiveQi: 79,
+      delayBudget,
+      per,
+      headline: 'Massive Machine-Type Communications (mMTC)',
+      summary: `Analyzed from your prompt: High connection density (${density.toLocaleString()} devices/km²) with lightweight telemetry (${downlink} Mbps DL) and tolerant delay (${latency} ms). mMTC leverages narrowband IoT (NB-IoT/eMTC) signaling to optimize energy and spectrum across dense sensor deployments.`,
+      reasons: [
+        `Prompt emphasizes sensor/metering scale (${density.toLocaleString()} devices/km²), triggering lightweight connectionless core signaling.`,
+        `Low throughput profile (${downlink} Mbps DL) allows extended discontinuous reception (eDRX) power optimization.`,
+        `Tolerant latency budget allows flexible radio subframe multiplexing without dedicated high-frequency carriers.`,
+      ],
+      edgeStrategy: 'Centralized Regional UPF with High-Density Signaling Concentrator',
+    };
+  }
+
+  // 3. URLLC
+  if (domains.isURLLCDomain || latency <= 10 || (reliability >= 99.999 && latency < 25)) {
+    return {
+      sliceName: 'URLLC',
+      sst: 2,
+      confidence: 97,
+      fiveQi: 82,
+      delayBudget,
+      per,
+      headline: 'Ultra-Reliable Low-Latency Communication (URLLC)',
+      summary: `Analyzed from your prompt: Strict ${latency} ms latency ceiling and ${reliability}% packet reliability. URLLC guarantees sub-slot grant-free transmission and dual-connectivity packet duplication to eliminate packet drop vulnerabilities.`,
+      reasons: [
+        `Extracted latency constraint (${latency} ms) requires 3GPP mini-slot puncturing over best-effort traffic.`,
+        `Ultra-high reliability SLA (${reliability}%) requires Packet Data Convergence Protocol (PDCP) duplication over dual carriers.`,
+        `Safety-critical demands dictate deterministic time-sensitive networking (TSN) profile mapping.`,
+      ],
+      edgeStrategy: 'On-Premise / Campus MEC UPF with Direct Hardware Bypass',
+    };
+  }
+
+  // 4. eMBB
+  return {
+    sliceName: 'eMBB',
+    sst: 1,
+    confidence: 94,
+    fiveQi: 9,
+    delayBudget,
+    per,
+    headline: 'Enhanced Mobile Broadband (eMBB)',
+    summary: `Analyzed from your prompt: Sustained high throughput (${downlink} Mbps DL / ${uplink} Mbps UL) with manageable latency (${latency} ms). An eMBB slice allocates carrier aggregation and high-order 256-QAM modulation for maximum spectral efficiency.`,
+    reasons: [
+      `Throughput requirements (${downlink} Mbps DL) utilize Multi-User MIMO (MU-MIMO) and wideband sub-6GHz spectrum.`,
+      `Latency requirement (${latency} ms) fits comfortably within standard 3GPP 1ms slot timing without radio puncturing.`,
+      `Commercial public 5G macro slice economics deliver the most cost-effective scalability.`,
+    ],
+    edgeStrategy: 'Regional Distributed UPF with Content Delivery Network (CDN) edge peering',
+  };
+}
+
+const toMbps = (val, unit) => {
+  const num = Number(val) || 0;
+  if (unit === 'Gbps') return num * 1000;
+  if (unit === 'Kbps') return num / 1000;
+  return num;
+};
+
+const fromMbps = (mbpsVal, targetUnit) => {
+  const num = Number(mbpsVal) || 0;
+  if (targetUnit === 'Gbps') return num / 1000;
+  if (targetUnit === 'Kbps') return num * 1000;
+  return num;
+};
 
 export default function NetworkSliceRecommender() {
+  // Input Mode: 'prompt' (direct natural language) vs 'key-value' (step-by-step form)
+  const [inputMode, setInputMode] = useState('prompt');
+
+  // Prompt Text & Extracted Specs
+  const [promptText, setPromptText] = useState(
+    'Deploying autonomous surveillance drones over city logistics hubs requiring sub-10ms latency, 50 Mbps 4K video uplink, and 99.999% ultra-reliable connectivity with vehicular mobility.'
+  );
+  const [extractedSpecs, setExtractedSpecs] = useState(null);
+
+  // Key-Value Stepper States
   const [currentStep, setCurrentStep] = useState(1);
 
-  const [appName, setAppName] = useState('Autonomous Drone / Teleoperation');
-  const [industry, setIndustry] = useState('Robotics & Logistics');
-  const [priority, setPriority] = useState('Mission Critical');
-
   const [latency, setLatency] = useState(8); // ms
-  const [downlink, setDownlink] = useState(120); // Mbps
-  const [uplink, setUplink] = useState(45); // Mbps
+  const [downlink, setDownlink] = useState(120);
+  const [downlinkUnit, setDownlinkUnit] = useState('Mbps');
+  const [uplink, setUplink] = useState(45);
+  const [uplinkUnit, setUplinkUnit] = useState('Mbps');
   const [jitter, setJitter] = useState('Ultra-Low (<1ms)');
 
   const [reliability, setReliability] = useState(99.999);
   const [mobility, setMobility] = useState('Vehicular (<120 km/h)');
   const [density, setDensity] = useState(1500);
 
-  // AI Backend Analysis States: 'idle' | 'analyzing' | 'done'
+  const downlinkMbps = useMemo(() => toMbps(downlink, downlinkUnit), [downlink, downlinkUnit]);
+  const uplinkMbps = useMemo(() => toMbps(uplink, uplinkUnit), [uplink, uplinkUnit]);
+
+  // Unified AI Backend Analysis States: 'idle' | 'analyzing' | 'done'
   const [analysisState, setAnalysisState] = useState('idle');
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisPhase, setAnalysisPhase] = useState('');
@@ -90,31 +335,45 @@ export default function NetworkSliceRecommender() {
     setAnalysisResult(null);
   }, []);
 
-  const applyPreset = (preset) => {
-    setAppName(preset.name);
-    setIndustry(preset.industry);
-    setPriority(preset.priority);
-    setLatency(preset.latency);
-    setDownlink(preset.downlink);
-    setUplink(preset.uplink);
-    setJitter(preset.jitter);
-    setReliability(preset.reliability);
-    setMobility(preset.mobility);
-    setDensity(preset.density);
+  const handleDownlinkUnitChange = useCallback((newUnit) => {
+    if (downlink !== '' && !isNaN(Number(downlink))) {
+      const currentMbps = toMbps(downlink, downlinkUnit);
+      const converted = fromMbps(currentMbps, newUnit);
+      const rounded = Math.round(converted * 10000) / 10000;
+      setDownlink(rounded);
+    }
+    setDownlinkUnit(newUnit);
     invalidateAnalysis();
-  };
+  }, [downlink, downlinkUnit, invalidateAnalysis]);
+
+  const handleUplinkUnitChange = useCallback((newUnit) => {
+    if (uplink !== '' && !isNaN(Number(uplink))) {
+      const currentMbps = toMbps(uplink, uplinkUnit);
+      const converted = fromMbps(currentMbps, newUnit);
+      const rounded = Math.round(converted * 10000) / 10000;
+      setUplink(rounded);
+    }
+    setUplinkUnit(newUnit);
+    invalidateAnalysis();
+  }, [uplink, uplinkUnit, invalidateAnalysis]);
 
   const computedRecommendation = useMemo(() => {
-    const isUltraLowLatency = latency <= 10;
-    const isUltraReliable = reliability >= 99.999;
-    const isHighBandwidth = downlink >= 150 || uplink >= 50;
-    const isMassiveDensity = density >= 100000;
+    const latNum = Number(latency) || 0;
+    const dlNum = downlinkMbps;
+    const ulNum = uplinkMbps;
+    const denNum = Number(density) || 0;
+    const relNum = Number(reliability) || 0;
+
+    const isUltraLowLatency = latNum <= 10;
+    const isUltraReliable = relNum >= 99.999;
+    const isHighBandwidth = dlNum >= 150 || ulNum >= 50;
+    const isMassiveDensity = denNum >= 100000;
     const isHighMobility = mobility.includes('High-Speed') || mobility.includes('Vehicular');
 
-    const delayBudget = `${latency} ms`;
+    const delayBudget = `${latNum} ms`;
     const per = '10⁻⁶';
 
-    if (isHighMobility && latency <= 15 && priority === 'Mission Critical') {
+    if (isHighMobility && latNum <= 15) {
       return {
         sliceName: 'V2X',
         sst: 4,
@@ -123,17 +382,17 @@ export default function NetworkSliceRecommender() {
         delayBudget,
         per,
         headline: 'Vehicle-to-Everything (V2X) Dedicated Slice',
-        summary: `Your service requires high mobility (${mobility}) coupled with low latency (${latency} ms) and ${reliability}% reliability. Standard cellular routing incurs handover latency; a 3GPP SST-4 slice guarantees sidelink PC5 support and pre-allocated radio resources.`,
+        summary: `Your service requires high mobility (${mobility}) coupled with low latency (${latNum} ms) and ${relNum}% reliability. Standard cellular routing incurs handover latency; a 3GPP SST-4 slice guarantees sidelink PC5 support and pre-allocated radio resources.`,
         reasons: [
           `High velocity (${mobility}) triggers rapid gNodeB handovers, requiring V2X predictive beam management.`,
-          `End-to-end latency constraint (${latency} ms) necessitates direct vehicle-to-infrastructure (V2I) QoS mapping.`,
+          `End-to-end latency constraint (${latNum} ms) necessitates direct vehicle-to-infrastructure (V2I) QoS mapping.`,
           `Mission-critical priority requires Guaranteed Bit Rate (GBR) and preemption vulnerability flags enabled.`,
         ],
         edgeStrategy: 'Roadside Unit (RSU) / Regional MEC UPF with Multi-access PDU sessions',
       };
     }
 
-    if (isMassiveDensity || (latency > 60 && downlink < 10 && density > 50000)) {
+    if (isMassiveDensity || (latNum > 60 && dlNum < 10 && denNum > 50000)) {
       return {
         sliceName: 'mMTC',
         sst: 3,
@@ -142,17 +401,17 @@ export default function NetworkSliceRecommender() {
         delayBudget,
         per,
         headline: 'Massive Machine-Type Communications (mMTC)',
-        summary: `Your application connects ${density.toLocaleString()} devices/km² with low throughput (${downlink} Mbps DL) and tolerant latency (${latency} ms). Traditional mobile broadband would exhaust cellular signaling resources; mMTC optimizes power and spectrum over high device counts.`,
+        summary: `Your application connects ${denNum.toLocaleString()} devices/km² with low throughput (${dlNum} Mbps DL) and tolerant latency (${latNum} ms). Traditional mobile broadband would exhaust cellular signaling resources; mMTC optimizes power and spectrum over high device counts.`,
         reasons: [
-          `Extremely high connection density (${density.toLocaleString()} devices/km²) requires lightweight connectionless transmission (NB-IoT/eMTC).`,
-          `Low throughput (${downlink} Mbps) allows aggressive narrow-band resource multiplexing and extended DRX power saving.`,
+          `Extremely high connection density (${denNum.toLocaleString()} devices/km²) requires lightweight connectionless transmission (NB-IoT/eMTC).`,
+          `Low throughput (${dlNum} Mbps) allows aggressive narrow-band resource multiplexing and extended DRX power saving.`,
           `Tolerant latency budget allows flexible radio scheduling without reserving dedicated high-frequency carriers.`,
         ],
         edgeStrategy: 'Centralized Regional UPF with High-Density Signaling Concentrator',
       };
     }
 
-    if (isUltraLowLatency || (isUltraReliable && latency < 25)) {
+    if (isUltraLowLatency || (isUltraReliable && latNum < 25)) {
       return {
         sliceName: 'URLLC',
         sst: 2,
@@ -161,17 +420,17 @@ export default function NetworkSliceRecommender() {
         delayBudget,
         per,
         headline: 'Ultra-Reliable Low-Latency Communication (URLLC)',
-        summary: `Your application demands a strict ${latency} ms latency ceiling and ${reliability}% packet reliability. eMBB cannot guarantee this jitter boundary; URLLC provides sub-slot grant-free transmission and dual-connectivity packet duplication.`,
+        summary: `Your application demands a strict ${latNum} ms latency ceiling and ${relNum}% packet reliability. eMBB cannot guarantee this jitter boundary; URLLC provides sub-slot grant-free transmission and dual-connectivity packet duplication.`,
         reasons: [
-          `Low latency requirement (${latency} ms) rules out standard best-effort eMBB scheduling, requiring mini-slot puncturing.`,
-          `Extreme reliability (${reliability}%) requires 3GPP Packet Data Convergence Protocol (PDCP) duplication over dual 5G carriers.`,
+          `Low latency requirement (${latNum} ms) rules out standard best-effort eMBB scheduling, requiring mini-slot puncturing.`,
+          `Extreme reliability (${relNum}%) requires 3GPP Packet Data Convergence Protocol (PDCP) duplication over dual 5G carriers.`,
           `Strict jitter requirement (${jitter}) necessitates deterministic time-sensitive networking (TSN) profile mapping.`,
         ],
         edgeStrategy: 'On-Premise / Campus MEC UPF with Direct Hardware Bypass',
       };
     }
 
-    if (isHighBandwidth || downlink >= 50) {
+    if (isHighBandwidth || dlNum >= 50) {
       return {
         sliceName: 'eMBB',
         sst: 1,
@@ -180,10 +439,10 @@ export default function NetworkSliceRecommender() {
         delayBudget,
         per,
         headline: 'Enhanced Mobile Broadband (eMBB)',
-        summary: `Your workload centers on sustained data throughput (${downlink} Mbps DL / ${uplink} Mbps UL) with manageable latency (${latency} ms). An eMBB slice allocates carrier aggregation and high-order 256-QAM modulation for maximum spectral efficiency.`,
+        summary: `Your workload centers on sustained data throughput (${dlNum} Mbps DL / ${ulNum} Mbps UL) with manageable latency (${latNum} ms). An eMBB slice allocates carrier aggregation and high-order 256-QAM modulation for maximum spectral efficiency.`,
         reasons: [
-          `High data demand (${downlink} Mbps downlink) requires Multi-User MIMO (MU-MIMO) and wideband sub-6GHz/mmWave spectrum.`,
-          `Moderate latency (${latency} ms) fits comfortably within standard 3GPP slot timing (1ms subframes) without costly radio puncturing.`,
+          `High data demand (${dlNum} Mbps downlink) requires Multi-User MIMO (MU-MIMO) and wideband sub-6GHz/mmWave spectrum.`,
+          `Moderate latency (${latNum} ms) fits comfortably within standard 3GPP slot timing (1ms subframes) without costly radio puncturing.`,
           `Standard 99.9% reliability SLA aligns with commercial public 5G macro slice economics.`,
         ],
         edgeStrategy: 'Regional Distributed UPF with Content Delivery Network (CDN) edge peering',
@@ -198,7 +457,7 @@ export default function NetworkSliceRecommender() {
       delayBudget,
       per,
       headline: 'Enhanced Mobile Broadband (Standard Enterprise)',
-      summary: `Balanced requirements across speed (${downlink} Mbps), latency (${latency} ms), and density. A standard eMBB slice provides cost-effective connectivity without requiring expensive dedicated URLLC reservation.`,
+      summary: `Balanced requirements across speed (${dlNum} Mbps), latency (${latNum} ms), and density. A standard eMBB slice provides cost-effective connectivity without requiring expensive dedicated URLLC reservation.`,
       reasons: [
         `Standard throughput and latency fall within default 3GPP 5QI 8/9 non-GBR operational boundaries.`,
         `Stationary to moderate mobility is seamlessly handled by public carrier macro cells.`,
@@ -206,116 +465,425 @@ export default function NetworkSliceRecommender() {
       ],
       edgeStrategy: 'Standard Core Network Gateway UPF',
     };
-  }, [latency, reliability, downlink, uplink, density, mobility, priority, jitter]);
+  }, [latency, reliability, downlinkMbps, uplinkMbps, density, mobility, jitter]);
 
-  // Trigger Backend Analysis
+  // Unified Trigger Analysis Function for both Prompting and Key-Value Pair modes
   const triggerAnalysis = useCallback(async () => {
     setAnalysisState('analyzing');
     setAnalysisProgress(20);
-    setAnalysisPhase('Connecting to 5G Slice Provisioning backend...');
 
-    const payload = {
-      application: { name: appName, industry, priority },
-      requirements: { latency, downlink, uplink, jitter, reliability, mobility, density }
-    };
+    if (inputMode === 'prompt') {
+      if (!promptText.trim()) return;
+      setAnalysisPhase('Parsing natural language requirements & semantic intent...');
 
-    try {
-      // Attempt real backend POST request; if not present, gracefully proceed with client simulation
-      const backendPromise = fetch('/api/recommend-slice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).then(res => res.ok ? res.json() : null).catch(() => null);
+      const specs = extractSpecsFromPrompt(promptText);
+      setExtractedSpecs(specs);
 
-      await new Promise(r => setTimeout(r, 450));
-      setAnalysisProgress(55);
-      setAnalysisPhase('Evaluating 3GPP 5QI delay budgets & radio resource multiplexing...');
+      const payload = {
+        mode: 'prompt',
+        prompt: promptText,
+        extractedRequirements: specs,
+      };
 
-      await new Promise(r => setTimeout(r, 550));
-      setAnalysisProgress(85);
-      setAnalysisPhase('Synthesizing explainable telecom justification & UPF topology...');
+      try {
+        const backendPromise = fetch('/api/recommend-slice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .catch(() => null);
 
-      const [serverResult] = await Promise.all([
-        backendPromise,
-        new Promise(r => setTimeout(r, 450))
-      ]);
+        await new Promise((r) => setTimeout(r, 450));
+        setAnalysisProgress(55);
+        setAnalysisPhase('Evaluating 3GPP 5QI delay budgets & radio resource multiplexing...');
 
-      setAnalysisProgress(100);
-      setAnalysisPhase('Optimization complete.');
-      setAnalysisResult(serverResult || computedRecommendation);
-      setAnalysisState('done');
-    } catch {
-      setAnalysisProgress(100);
-      setAnalysisResult(computedRecommendation);
-      setAnalysisState('done');
+        await new Promise((r) => setTimeout(r, 550));
+        setAnalysisProgress(85);
+        setAnalysisPhase('Synthesizing explainable telecom justification & UPF topology...');
+
+        const [serverResult] = await Promise.all([
+          backendPromise,
+          new Promise((r) => setTimeout(r, 450)),
+        ]);
+
+        const recommendation = serverResult || generatePromptRecommendation(specs);
+
+        setAnalysisProgress(100);
+        setAnalysisPhase('Optimization complete.');
+        setAnalysisResult(recommendation);
+        setAnalysisState('done');
+      } catch {
+        const recommendation = generatePromptRecommendation(specs);
+        setAnalysisProgress(100);
+        setAnalysisResult(recommendation);
+        setAnalysisState('done');
+      }
+    } else {
+      setAnalysisPhase('Connecting to 5G Slice Provisioning backend...');
+
+      const payload = {
+        mode: 'key-value',
+        requirements: {
+          latency: Number(latency) || 0,
+          downlink: downlinkMbps,
+          uplink: uplinkMbps,
+          downlinkFormatted: `${downlink} ${downlinkUnit}`,
+          uplinkFormatted: `${uplink} ${uplinkUnit}`,
+          jitter,
+          reliability: Number(reliability) || 0,
+          mobility,
+          density: Number(density) || 0,
+        },
+      };
+
+      try {
+        const backendPromise = fetch('/api/recommend-slice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .catch(() => null);
+
+        await new Promise((r) => setTimeout(r, 450));
+        setAnalysisProgress(55);
+        setAnalysisPhase('Evaluating 3GPP 5QI delay budgets & radio resource multiplexing...');
+
+        await new Promise((r) => setTimeout(r, 550));
+        setAnalysisProgress(85);
+        setAnalysisPhase('Synthesizing explainable telecom justification & UPF topology...');
+
+        const [serverResult] = await Promise.all([
+          backendPromise,
+          new Promise((r) => setTimeout(r, 450)),
+        ]);
+
+        setAnalysisProgress(100);
+        setAnalysisPhase('Optimization complete.');
+        setAnalysisResult(serverResult || computedRecommendation);
+        setAnalysisState('done');
+      } catch {
+        setAnalysisProgress(100);
+        setAnalysisResult(computedRecommendation);
+        setAnalysisState('done');
+      }
     }
-  }, [appName, industry, priority, latency, downlink, uplink, jitter, reliability, mobility, density, computedRecommendation]);
+  }, [inputMode, promptText, latency, downlink, downlinkUnit, downlinkMbps, uplink, uplinkUnit, uplinkMbps, jitter, reliability, mobility, density, computedRecommendation]);
 
   const activeResult = analysisResult || computedRecommendation;
 
+  // Unified Export Configuration (JSON specification)
   const exportConfig = useCallback(() => {
+    const isPrompt = inputMode === 'prompt';
     const config = {
+      mode: isPrompt ? 'prompt-specification' : 'key-value-specification',
       timestamp: new Date().toISOString(),
-      application: {
-        name: appName,
-        industry,
-        priority,
-      },
-      requirements: {
-        latencyMs: latency,
-        downlinkMbps: downlink,
-        uplinkMbps: uplink,
-        jitterTolerance: jitter,
-        reliabilityPercentage: reliability,
-        mobilityTier: mobility,
-        deviceDensityPerKm2: density,
-      },
+      ...(isPrompt
+        ? {
+            prompt: promptText,
+            extractedRequirements: {
+              latencyMs: extractedSpecs?.latency,
+              downlinkMbps: extractedSpecs?.downlink,
+              uplinkMbps: extractedSpecs?.uplink,
+              reliabilityPercentage: extractedSpecs?.reliability,
+              mobilityTier: extractedSpecs?.mobility,
+              deviceDensityPerKm2: extractedSpecs?.density,
+            },
+          }
+        : {
+            requirements: {
+              latencyMs: Number(latency) || 0,
+              downlinkMbps,
+              uplinkMbps,
+              downlinkFormatted: `${downlink} ${downlinkUnit}`,
+              uplinkFormatted: `${uplink} ${uplinkUnit}`,
+              jitterTolerance: jitter,
+              reliabilityPercentage: Number(reliability) || 0,
+              mobilityTier: mobility,
+              deviceDensityPerKm2: Number(density) || 0,
+            },
+          }),
       aiRecommendation: {
-        sliceCategory: activeResult.sliceName,
-        sst: activeResult.sst,
-        confidencePercentage: activeResult.confidence,
+        sliceCategory: activeResult?.sliceName,
+        sst: activeResult?.sst,
+        confidencePercentage: activeResult?.confidence,
         qosParameters: {
-          fiveQi: activeResult.fiveQi,
-          packetDelayBudget: activeResult.delayBudget,
-          packetErrorRate: activeResult.per,
+          fiveQi: activeResult?.fiveQi,
+          packetDelayBudget: activeResult?.delayBudget,
+          packetErrorRate: activeResult?.per,
         },
-        edgeDeploymentStrategy: activeResult.edgeStrategy,
-        justification: activeResult.summary,
-        keyDrivers: activeResult.reasons,
+        edgeDeploymentStrategy: activeResult?.edgeStrategy,
+        justification: activeResult?.summary,
+        keyDrivers: activeResult?.reasons,
       },
     };
 
     navigator.clipboard?.writeText(JSON.stringify(config, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
-  }, [appName, industry, priority, latency, downlink, uplink, jitter, reliability, mobility, density, activeResult]);
+  }, [inputMode, promptText, extractedSpecs, latency, downlink, downlinkUnit, downlinkMbps, uplink, uplinkUnit, uplinkMbps, jitter, reliability, mobility, density, activeResult]);
+
+  // Populate Key-Value Stepper from Prompt Specs
+  const applyPromptToKeyValue = useCallback(() => {
+    const specs = extractedSpecs || extractSpecsFromPrompt(promptText);
+    setLatency(specs.latency);
+    if (specs.downlink >= 1000) {
+      setDownlink(specs.downlink / 1000);
+      setDownlinkUnit('Gbps');
+    } else if (specs.downlink < 1) {
+      setDownlink(Math.round(specs.downlink * 1000));
+      setDownlinkUnit('Kbps');
+    } else {
+      setDownlink(specs.downlink);
+      setDownlinkUnit('Mbps');
+    }
+
+    if (specs.uplink >= 1000) {
+      setUplink(specs.uplink / 1000);
+      setUplinkUnit('Gbps');
+    } else if (specs.uplink < 1) {
+      setUplink(Math.round(specs.uplink * 1000));
+      setUplinkUnit('Kbps');
+    } else {
+      setUplink(specs.uplink);
+      setUplinkUnit('Mbps');
+    }
+
+    setReliability(specs.reliability);
+    setMobility(specs.mobility);
+    setDensity(specs.density);
+    setInputMode('key-value');
+    setCurrentStep(1);
+    invalidateAnalysis();
+  }, [extractedSpecs, promptText, invalidateAnalysis]);
 
   // Footer next button label for navigation steps
-  const nextButtonText = currentStep < 3 ? 'Next Step' : 'Review & Analyse';
+  const nextButtonText = currentStep < 2 ? 'Next Step' : 'Review & Analyse';
 
   return (
     <div className="recommender-container">
-      <div className="recommender-hero">
-        <div className="hero-badge">AI-Assisted 5G Provisioning</div>
-        <h1 className="hero-title">
-          <ShinyText
-            text="TeaPot"
-            color="#000000"
-            shineColor="#333333"
-            speed={2}
-            shineWidth={40}
-            softness={0.8}
-            trigger="loop"
-            className="hero-teapot-text"
-          />
-        </h1>
-        <p className="hero-subtitle">
-          Input your application connectivity parameters to evaluate and receive an explainable 3GPP slice allocation
-          before deploying to the network.
-        </p>
+      {/* MODE SELECTOR */}
+      <div className="input-mode-selector-wrapper">
+        <div className="input-mode-selector" role="tablist" aria-label="Input Method">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={inputMode === 'prompt'}
+            className={`mode-tab ${inputMode === 'prompt' ? 'mode-tab--active' : ''}`}
+            onClick={() => setInputMode('prompt')}
+          >
+            <HugeiconsIcon icon={AiSparklesIcon} size={16} strokeWidth={2.2} />
+            <span className="mode-tab-title">Prompting</span>
+            <span className="mode-tab-badge">Direct AI</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={inputMode === 'key-value'}
+            className={`mode-tab ${inputMode === 'key-value' ? 'mode-tab--active' : ''}`}
+            onClick={() => setInputMode('key-value')}
+          >
+            <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} strokeWidth={2.2} />
+            <span className="mode-tab-title">Key-Value Pairs</span>
+            <span className="mode-tab-badge">Step-by-Step</span>
+          </button>
+        </div>
       </div>
 
-      <div className="recommender-stepper-wrapper">
+      {inputMode === 'prompt' ? (
+        <div className="prompt-mode-wrapper">
+          {/* STATE 1: IDLE / PROMPT ENTRY */}
+          {analysisState === 'idle' && (
+            <div className="prompt-card">
+              <h3 className="prompt-card-title">Describe Your Network Workload</h3>
+              <p className="prompt-card-desc">
+                Specify your application requirements, deployment environment, and latency goals in plain English.
+                The AI engine evaluates your prompt directly, extracts 3GPP QoS parameters, and allocates the optimal slice.
+              </p>
+
+              <div className="form-group">
+                <div className="prompt-label-row">
+                  <label className="input-label" htmlFor="user-prompt">Application & Connectivity Prompt</label>
+                  {promptText && (
+                    <button
+                      type="button"
+                      className="clear-prompt-btn"
+                      onClick={() => {
+                        setPromptText('');
+                        invalidateAnalysis();
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  id="user-prompt"
+                  className="prompt-textarea"
+                  rows={4}
+                  value={promptText}
+                  onChange={(e) => {
+                    setPromptText(e.target.value);
+                    invalidateAnalysis();
+                  }}
+                  placeholder="e.g. Deploying autonomous surveillance drones over city logistics hubs requiring sub-10ms latency, 50 Mbps 4K video uplink, and 99.999% ultra-reliable connectivity with vehicular mobility."
+                />
+                <div className="textarea-footer">
+                  <span className="char-count">{promptText.length} characters</span>
+                  <span className="hint-text">Mention latency (ms), bandwidth (Mbps), reliability (%), mobility or density</span>
+                </div>
+              </div>
+
+              <div className="prompt-actions">
+                <AnalyseButton
+                  disabled={!promptText.trim()}
+                  onCommit={triggerAnalysis}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* STATE 2: ANALYZING RADAR */}
+          {analysisState === 'analyzing' && (
+            <div className="analyzing-card prompt-analyzing-card">
+              <div className="radar-spinner-wrap">
+                <div className="radar-ripple"></div>
+                <div className="radar-core">
+                  <span className="core-icon">5G</span>
+                </div>
+              </div>
+
+              <h3 className="analyzing-title">Evaluating 5G Core Network Slices</h3>
+              <p className="analyzing-phase">{analysisPhase}</p>
+
+              <div className="analysis-progress-bar">
+                <div className="analysis-progress-fill" style={{ width: `${analysisProgress}%` }}></div>
+              </div>
+
+              <div className="telecom-telemetry-feed">
+                <div className={`feed-item ${analysisProgress >= 20 ? 'feed-item--active' : ''}`}>
+                  <span className="feed-dot"></span> NLP Intent & Telemetry Parser
+                </div>
+                <div className={`feed-item ${analysisProgress >= 55 ? 'feed-item--active' : ''}`}>
+                  <span className="feed-dot"></span> 3GPP Rel-18 QoS Classifier & 5QI Calculation
+                </div>
+                <div className={`feed-item ${analysisProgress >= 85 ? 'feed-item--active' : ''}`}>
+                  <span className="feed-dot"></span> Slicing Decision & Explainability Synthesis
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STATE 3: DONE / RESULT DISPLAY */}
+          {analysisState === 'done' && activeResult && (
+            <div className="recommendation-card prompt-result-card">
+              <div className="rec-top-actions">
+                <div className="ai-verified-tag">
+                  <HugeiconsIcon icon={Tick02Icon} size={15} strokeWidth={2.4} />
+                  <span>Analysis Returned by AI Engine (Direct Prompt)</span>
+                </div>
+                <div className="rec-action-buttons">
+                  <button
+                    type="button"
+                    className="re-analyze-btn"
+                    onClick={invalidateAnalysis}
+                  >
+                    ✎ Edit Prompt
+                  </button>
+                  <button
+                    type="button"
+                    className="re-analyze-btn"
+                    onClick={triggerAnalysis}
+                  >
+                    ↻ Re-analyse
+                  </button>
+                </div>
+              </div>
+
+              <div className="prompt-quote-box">
+                <span className="prompt-quote-label">Evaluated Prompt:</span>
+                <p className="prompt-quote-text">"{promptText}"</p>
+              </div>
+
+              {extractedSpecs && (
+                <div className="extracted-specs-strip">
+                  <div className="strip-title">Extracted QoS Telemetry:</div>
+                  <div className="strip-chips">
+                    <span className="strip-chip">Latency: <strong>{extractedSpecs.latency} ms</strong></span>
+                    <span className="strip-chip">DL: <strong>{extractedSpecs.downlink} Mbps</strong></span>
+                    <span className="strip-chip">UL: <strong>{extractedSpecs.uplink} Mbps</strong></span>
+                    <span className="strip-chip">Reliability: <strong>{extractedSpecs.reliability}%</strong></span>
+                    <span className="strip-chip">Mobility: <strong>{extractedSpecs.mobility}</strong></span>
+                    <span className="strip-chip">Density: <strong>{extractedSpecs.density.toLocaleString()} / km²</strong></span>
+                  </div>
+                </div>
+              )}
+
+              <div className="rec-header">
+                <div className="rec-slice-badge">
+                  <span className="rec-sst">3GPP SST {activeResult.sst}</span>
+                  <span className="rec-tag">{activeResult.sliceName}</span>
+                </div>
+                <div className="rec-score">
+                  <span className="score-num">{activeResult.confidence}%</span>
+                  <span className="score-label">Match Confidence</span>
+                </div>
+              </div>
+
+              <h3 className="rec-title">{activeResult.headline}</h3>
+              <p className="rec-summary">{activeResult.summary}</p>
+
+              <div className="specs-grid">
+                <div className="spec-card">
+                  <span className="spec-label">Recommended 5QI</span>
+                  <span className="spec-val">{activeResult.fiveQi}</span>
+                </div>
+                <div className="spec-card">
+                  <span className="spec-label">Packet Delay Budget</span>
+                  <span className="spec-val">{activeResult.delayBudget}</span>
+                </div>
+                <div className="spec-card">
+                  <span className="spec-label">Error Rate Target</span>
+                  <span className="spec-val">{activeResult.per}</span>
+                </div>
+                <div className="spec-card">
+                  <span className="spec-label">Slice Service Type</span>
+                  <span className="spec-val">SST-{activeResult.sst}</span>
+                </div>
+              </div>
+
+              <div className="reasons-block">
+                <h4>Explainable Telecom Justification</h4>
+                <ul className="reasons-list">
+                  {activeResult.reasons.map((reason, i) => (
+                    <li key={i}>{reason}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="edge-guideline">
+                <div className="edge-title">Core & Edge Deployment Architecture</div>
+                <div className="edge-desc">{activeResult.edgeStrategy}</div>
+              </div>
+
+              <div className="export-row-dual">
+                <button type="button" className="export-btn" onClick={exportConfig}>
+                  {copied ? '✓ Copied JSON Specification to Clipboard' : 'Export 5G Slice Provisioning Config'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={applyPromptToKeyValue}
+                >
+                  Fine-tune in Key-Value Mode →
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="recommender-stepper-wrapper">
         <Stepper
           step={currentStep}
           initialStep={1}
@@ -327,170 +895,97 @@ export default function NetworkSliceRecommender() {
           backButtonText="Back"
           nextButtonText={nextButtonText}
           completeButtonText={nextButtonText}
-          showNextButton={currentStep < 4}
+          showNextButton={currentStep < 3}
           className="slice-stepper"
         >
-          {/* STEP 1: Application Profile */}
-          <Step title="Application Profile" description="Use Case & Priority">
-            <div className="step-content">
-              <div className="step-heading">
-                <span className="step-badge">Step 1</span>
-                <h3>Define Application Profile</h3>
-                <p>Select a pre-tuned telecom template or customize your application metadata.</p>
-              </div>
-
-              <div className="preset-section">
-                <label className="input-label">Quick Presets</label>
-                <div className="preset-grid">
-                  {PRESETS.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className={`preset-chip ${appName === p.name ? 'preset-chip--active' : ''}`}
-                      onClick={() => applyPreset(p)}
-                    >
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="input-label" htmlFor="app-name">Application Name</label>
-                <input
-                  id="app-name"
-                  type="text"
-                  className="text-input"
-                  value={appName}
-                  onChange={(e) => {
-                    setAppName(e.target.value);
-                    invalidateAnalysis();
-                  }}
-                  placeholder="e.g. Tele-operated Surgical Robot"
-                />
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="input-label" htmlFor="industry-select">Industry Vertical</label>
-                  <select
-                    id="industry-select"
-                    className="select-input"
-                    value={industry}
-                    onChange={(e) => {
-                      setIndustry(e.target.value);
-                      invalidateAnalysis();
-                    }}
-                  >
-                    <option>Robotics & Logistics</option>
-                    <option>Healthcare & Telemedicine</option>
-                    <option>Automotive & Transport</option>
-                    <option>Energy & Utilities</option>
-                    <option>Media & Entertainment</option>
-                    <option>Smart Cities & Surveillance</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="input-label" htmlFor="priority-select">Criticality Level</label>
-                  <select
-                    id="priority-select"
-                    className="select-input"
-                    value={priority}
-                    onChange={(e) => {
-                      setPriority(e.target.value);
-                      invalidateAnalysis();
-                    }}
-                  >
-                    <option>Mission Critical (Life/Safety)</option>
-                    <option>Business Critical</option>
-                    <option>Standard Best-Effort</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </Step>
-
-          {/* STEP 2: Performance & QoS */}
+          {/* STEP 1: Performance & QoS */}
           <Step title="QoS & Speed" description="Latency & Bandwidth">
             <div className="step-content">
               <div className="step-heading">
-                <span className="step-badge">Step 2</span>
+                <span className="step-badge">Step 1</span>
                 <h3>Latency & Throughput Requirements</h3>
                 <p>Define the strict end-to-end timing and bandwidth demands of your data flows.</p>
               </div>
 
-              <div className="metric-box">
-                <div className="metric-header">
-                  <span className="input-label">Target E2E Latency</span>
-                  <span className="metric-value-tag highlight-orange">{latency} ms</span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="100"
-                  step="1"
-                  className="slider"
-                  value={latency}
-                  onChange={(e) => {
-                    setLatency(Number(e.target.value));
-                    invalidateAnalysis();
-                  }}
-                />
-                <div className="slider-labels">
-                  <span>1 ms (Ultra-Low)</span>
-                  <span>20 ms</span>
-                  <span>50 ms</span>
-                  <span>100 ms (Tolerant)</span>
+              <div className="form-group">
+                <label className="input-label" htmlFor="latency-input">Target E2E Latency</label>
+                <div className="input-with-unit">
+                  <input
+                    id="latency-input"
+                    type="number"
+                    min="1"
+                    max="500"
+                    step="1"
+                    className="text-input"
+                    value={latency}
+                    onChange={(e) => {
+                      setLatency(e.target.value === '' ? '' : Number(e.target.value));
+                      invalidateAnalysis();
+                    }}
+                    placeholder="e.g. 8"
+                  />
+                  <span className="input-unit">ms</span>
                 </div>
               </div>
 
               <div className="form-row">
-                <div className="metric-box">
-                  <div className="metric-header">
-                    <span className="input-label">Downlink Throughput</span>
-                    <span className="metric-value-tag">{downlink} Mbps</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="1000"
-                    step="10"
-                    className="slider"
-                    value={downlink}
-                    onChange={(e) => {
-                      setDownlink(Number(e.target.value));
-                      invalidateAnalysis();
-                    }}
-                  />
-                  <div className="slider-labels">
-                    <span>1 Mbps</span>
-                    <span>500 Mbps</span>
-                    <span>1 Gbps</span>
+                <div className="form-group">
+                  <label className="input-label" htmlFor="downlink-input">Downlink Throughput</label>
+                  <div className="input-with-unit">
+                    <input
+                      id="downlink-input"
+                      type="number"
+                      min="0.001"
+                      step="any"
+                      className="text-input"
+                      value={downlink}
+                      onChange={(e) => {
+                        setDownlink(e.target.value === '' ? '' : Number(e.target.value));
+                        invalidateAnalysis();
+                      }}
+                      placeholder="e.g. 120"
+                    />
+                    <select
+                      id="downlink-unit"
+                      className="unit-select"
+                      aria-label="Downlink unit"
+                      value={downlinkUnit}
+                      onChange={(e) => handleDownlinkUnitChange(e.target.value)}
+                    >
+                      <option value="Kbps">Kbps</option>
+                      <option value="Mbps">Mbps</option>
+                      <option value="Gbps">Gbps</option>
+                    </select>
                   </div>
                 </div>
 
-                <div className="metric-box">
-                  <div className="metric-header">
-                    <span className="input-label">Uplink Throughput</span>
-                    <span className="metric-value-tag">{uplink} Mbps</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="300"
-                    step="5"
-                    className="slider"
-                    value={uplink}
-                    onChange={(e) => {
-                      setUplink(Number(e.target.value));
-                      invalidateAnalysis();
-                    }}
-                  />
-                  <div className="slider-labels">
-                    <span>1 Mbps</span>
-                    <span>150 Mbps</span>
-                    <span>300 Mbps</span>
+                <div className="form-group">
+                  <label className="input-label" htmlFor="uplink-input">Uplink Throughput</label>
+                  <div className="input-with-unit">
+                    <input
+                      id="uplink-input"
+                      type="number"
+                      min="0.001"
+                      step="any"
+                      className="text-input"
+                      value={uplink}
+                      onChange={(e) => {
+                        setUplink(e.target.value === '' ? '' : Number(e.target.value));
+                        invalidateAnalysis();
+                      }}
+                      placeholder="e.g. 45"
+                    />
+                    <select
+                      id="uplink-unit"
+                      className="unit-select"
+                      aria-label="Uplink unit"
+                      value={uplinkUnit}
+                      onChange={(e) => handleUplinkUnitChange(e.target.value)}
+                    >
+                      <option value="Kbps">Kbps</option>
+                      <option value="Mbps">Mbps</option>
+                      <option value="Gbps">Gbps</option>
+                    </select>
                   </div>
                 </div>
               </div>
@@ -514,11 +1009,11 @@ export default function NetworkSliceRecommender() {
             </div>
           </Step>
 
-          {/* STEP 3: Reliability & Mobility */}
+          {/* STEP 2: Reliability & Mobility */}
           <Step title="Environment" description="Reliability & Density">
             <div className="step-content">
               <div className="step-heading">
-                <span className="step-badge">Step 3</span>
+                <span className="step-badge">Step 2</span>
                 <h3>Operating Environment & SLA</h3>
                 <p>Configure device density, movement speed, and packet delivery guarantee.</p>
               </div>
@@ -563,33 +1058,29 @@ export default function NetworkSliceRecommender() {
                 </select>
               </div>
 
-              <div className="metric-box">
-                <div className="metric-header">
-                  <span className="input-label">Connection Density (devices / km²)</span>
-                  <span className="metric-value-tag">{density.toLocaleString()} / km²</span>
-                </div>
-                <input
-                  type="range"
-                  min="100"
-                  max="1000000"
-                  step="5000"
-                  className="slider"
-                  value={density}
-                  onChange={(e) => {
-                    setDensity(Number(e.target.value));
-                    invalidateAnalysis();
-                  }}
-                />
-                <div className="slider-labels">
-                  <span>100 (Sparse)</span>
-                  <span>50,000 (Campus)</span>
-                  <span>1,000,000 (Massive IoT)</span>
+              <div className="form-group">
+                <label className="input-label" htmlFor="density-input">Connection Density</label>
+                <div className="input-with-unit">
+                  <input
+                    id="density-input"
+                    type="number"
+                    min="1"
+                    step="100"
+                    className="text-input"
+                    value={density}
+                    onChange={(e) => {
+                      setDensity(e.target.value === '' ? '' : Number(e.target.value));
+                      invalidateAnalysis();
+                    }}
+                    placeholder="e.g. 1500"
+                  />
+                  <span className="input-unit">devices / km²</span>
                 </div>
               </div>
             </div>
           </Step>
 
-          {/* STEP 4: AI Recommendation & Justification */}
+          {/* STEP 3: AI Recommendation & Justification */}
           <Step title="AI Recommendation" description="Slice Category & QoS">
             <div className="step-content">
               {/* STATE 1: IDLE / READY TO ANALYZE */}
@@ -600,7 +1091,7 @@ export default function NetworkSliceRecommender() {
                       <span className="pulse-dot"></span>
                       Inputs Ready for Evaluation
                     </div>
-                    <span className="ready-step-indicator">Step 4 of 4</span>
+                    <span className="ready-step-indicator">Step 3 of 3</span>
                   </div>
 
                   <h3 className="ready-title">Ready to Analyse 5G Slice Requirements</h3>
@@ -611,16 +1102,16 @@ export default function NetworkSliceRecommender() {
 
                   <div className="ready-spec-chips">
                     <div className="spec-chip">
-                      <span className="chip-label">Application</span>
-                      <span className="chip-val">{appName}</span>
-                    </div>
-                    <div className="spec-chip">
                       <span className="chip-label">Target Latency</span>
                       <span className="chip-val highlight-orange">{latency} ms</span>
                     </div>
                     <div className="spec-chip">
                       <span className="chip-label">Downlink / Uplink</span>
-                      <span className="chip-val">{downlink} / {uplink} Mbps</span>
+                      <span className="chip-val">{downlink} {downlinkUnit} / {uplink} {uplinkUnit}</span>
+                    </div>
+                    <div className="spec-chip">
+                      <span className="chip-label">Jitter / Variation</span>
+                      <span className="chip-val">{jitter.split(' - ')[0]}</span>
                     </div>
                     <div className="spec-chip">
                       <span className="chip-label">Reliability</span>
@@ -632,26 +1123,13 @@ export default function NetworkSliceRecommender() {
                     </div>
                     <div className="spec-chip">
                       <span className="chip-label">Density</span>
-                      <span className="chip-val">{density.toLocaleString()} / km²</span>
+                      <span className="chip-val">{(Number(density) || 0).toLocaleString()} / km²</span>
                     </div>
                   </div>
 
-                  <FuseButton
-                    label="Analyse"
-                    undoLabel="Undo"
-                    doneLabel="Analysing..."
-                    icon={<HugeiconsIcon icon={AiBrain01Icon} size={18} strokeWidth={2.2} />}
-                    color="#ffffff"
-                    background="#231f2d"
-                    fuseColor="#f3903f"
-                    size="lg"
-                    radius={14}
-                    undoWindow={5000}
-                    fuse="outline"
-                    fuseThickness={2}
-                    commitOn="fuseEnd"
-                    onCommit={() => triggerAnalysis()}
-                    className="ready-analyze-fuse-btn"
+                  <AnalyseButton
+                    disabled={false}
+                    onCommit={triggerAnalysis}
                   />
                 </div>
               )}
@@ -758,6 +1236,7 @@ export default function NetworkSliceRecommender() {
           </Step>
         </Stepper>
       </div>
+      )}
     </div>
   );
 }
