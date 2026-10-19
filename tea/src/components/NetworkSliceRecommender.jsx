@@ -1,8 +1,9 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import Stepper, { Step } from './Stepper';
 import AnalyseButton from './AnalyseButton';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Tick02Icon, AiSparklesIcon, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
+import { Tick02Icon, AiSparklesIcon, SlidersHorizontalIcon, CloudServerIcon } from '@hugeicons/core-free-icons';
+import { generateSliceRecommendation, checkBackendStatus } from '../services/slicerApi';
 import './NetworkSliceRecommender.css';
 
 function extractSpecsFromPrompt(text) {
@@ -207,6 +208,7 @@ function generatePromptRecommendation(specs) {
     return {
       sliceName: 'V2X',
       sst: 4,
+      sd: '0x000004',
       confidence: 98,
       fiveQi: 83,
       delayBudget,
@@ -219,6 +221,7 @@ function generatePromptRecommendation(specs) {
         `Mission-critical safety profile prioritizes Guaranteed Bit Rate (GBR) with preemption flags enabled.`,
       ],
       edgeStrategy: 'Roadside Unit (RSU) / Regional MEC UPF with Multi-access PDU sessions',
+      counterFactuals: 'If mobility drops to stationary/pedestrian (<10 km/h) and latency is relaxed to >20ms, recommendation transitions to standard eMBB (SST-1), reducing sidelink PC5 overhead by ~45%.',
     };
   }
 
@@ -227,6 +230,7 @@ function generatePromptRecommendation(specs) {
     return {
       sliceName: 'mMTC',
       sst: 3,
+      sd: '0x000003',
       confidence: 96,
       fiveQi: 79,
       delayBudget,
@@ -239,6 +243,7 @@ function generatePromptRecommendation(specs) {
         `Tolerant latency budget allows flexible radio subframe multiplexing without dedicated high-frequency carriers.`,
       ],
       edgeStrategy: 'Centralized Regional UPF with High-Density Signaling Concentrator',
+      counterFactuals: 'If device density drops below 10,000 devices/km² and individual throughput exceeds 25 Mbps, slice transitions to eMBB (SST-1) with active scheduled grant carriers.',
     };
   }
 
@@ -247,6 +252,7 @@ function generatePromptRecommendation(specs) {
     return {
       sliceName: 'URLLC',
       sst: 2,
+      sd: '0x000002',
       confidence: 97,
       fiveQi: 82,
       delayBudget,
@@ -259,6 +265,7 @@ function generatePromptRecommendation(specs) {
         `Safety-critical demands dictate deterministic time-sensitive networking (TSN) profile mapping.`,
       ],
       edgeStrategy: 'On-Premise / Campus MEC UPF with Direct Hardware Bypass',
+      counterFactuals: 'If reliability SLA is relaxed from 99.999% to 99.9% and latency tolerance exceeds 20ms, carrier duplication can be disabled, saving power under standard eMBB (SST-1).',
     };
   }
 
@@ -266,6 +273,7 @@ function generatePromptRecommendation(specs) {
   return {
     sliceName: 'eMBB',
     sst: 1,
+    sd: '0x000001',
     confidence: 94,
     fiveQi: 9,
     delayBudget,
@@ -278,6 +286,7 @@ function generatePromptRecommendation(specs) {
       `Commercial public 5G macro slice economics deliver the most cost-effective scalability.`,
     ],
     edgeStrategy: 'Regional Distributed UPF with Content Delivery Network (CDN) edge peering',
+    counterFactuals: 'If latency ceiling is tightened to <10ms and reliability SLA rises to 99.999%, workload escalates to URLLC (SST-2) requiring pre-emptive radio reservation.',
   };
 }
 
@@ -329,6 +338,19 @@ export default function NetworkSliceRecommender() {
   const [analysisResult, setAnalysisResult] = useState(null);
 
   const [copied, setCopied] = useState(false);
+  const [backendStatus, setBackendStatus] = useState({ online: false, checked: false });
+
+  useEffect(() => {
+    let isMounted = true;
+    checkBackendStatus().then((res) => {
+      if (isMounted) {
+        setBackendStatus({ online: res.online, checked: true });
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const invalidateAnalysis = useCallback(() => {
     setAnalysisState('idle');
@@ -377,6 +399,7 @@ export default function NetworkSliceRecommender() {
       return {
         sliceName: 'V2X',
         sst: 4,
+        sd: '0x000004',
         confidence: 97,
         fiveQi: 83,
         delayBudget,
@@ -389,6 +412,7 @@ export default function NetworkSliceRecommender() {
           `Mission-critical priority requires Guaranteed Bit Rate (GBR) and preemption vulnerability flags enabled.`,
         ],
         edgeStrategy: 'Roadside Unit (RSU) / Regional MEC UPF with Multi-access PDU sessions',
+        counterFactuals: 'If mobility profile drops to pedestrian/stationary (<10 km/h) and latency allows >20ms, workload shifts from V2X (SST-4) to standard enterprise eMBB (SST-1), saving sidelink PC5 pre-allocation overhead.',
       };
     }
 
@@ -396,6 +420,7 @@ export default function NetworkSliceRecommender() {
       return {
         sliceName: 'mMTC',
         sst: 3,
+        sd: '0x000003',
         confidence: 94,
         fiveQi: 79,
         delayBudget,
@@ -408,6 +433,7 @@ export default function NetworkSliceRecommender() {
           `Tolerant latency budget allows flexible radio scheduling without reserving dedicated high-frequency carriers.`,
         ],
         edgeStrategy: 'Centralized Regional UPF with High-Density Signaling Concentrator',
+        counterFactuals: 'If device density drops below 10,000 devices/km² and throughput exceeds 25 Mbps, slice transitions to eMBB (SST-1) with active scheduled grant carriers.',
       };
     }
 
@@ -415,6 +441,7 @@ export default function NetworkSliceRecommender() {
       return {
         sliceName: 'URLLC',
         sst: 2,
+        sd: '0x000002',
         confidence: 96,
         fiveQi: 82,
         delayBudget,
@@ -427,6 +454,7 @@ export default function NetworkSliceRecommender() {
           `Strict jitter requirement (${jitter}) necessitates deterministic time-sensitive networking (TSN) profile mapping.`,
         ],
         edgeStrategy: 'On-Premise / Campus MEC UPF with Direct Hardware Bypass',
+        counterFactuals: 'If reliability guarantee is relaxed from 99.999% to 99.9% and latency tolerance exceeds 20ms, carrier duplication can be disabled, saving power under standard eMBB (SST-1).',
       };
     }
 
@@ -434,6 +462,7 @@ export default function NetworkSliceRecommender() {
       return {
         sliceName: 'eMBB',
         sst: 1,
+        sd: '0x000001',
         confidence: 92,
         fiveQi: 9,
         delayBudget,
@@ -446,12 +475,14 @@ export default function NetworkSliceRecommender() {
           `Standard 99.9% reliability SLA aligns with commercial public 5G macro slice economics.`,
         ],
         edgeStrategy: 'Regional Distributed UPF with Content Delivery Network (CDN) edge peering',
+        counterFactuals: 'If latency ceiling is tightened to <10ms and reliability SLA rises to 99.999%, workload escalates to URLLC (SST-2) requiring pre-emptive radio reservation.',
       };
     }
 
     return {
       sliceName: 'eMBB',
       sst: 1,
+      sd: '0x000001',
       confidence: 88,
       fiveQi: 8,
       delayBudget,
@@ -464,104 +495,106 @@ export default function NetworkSliceRecommender() {
         `Lowest deployment and subscription overhead with zero custom private core requirements.`,
       ],
       edgeStrategy: 'Standard Core Network Gateway UPF',
+      counterFactuals: 'If latency requirement tightens below 10ms or throughput exceeds 1 Gbps, slice escalates to premium high-density private core allocation.',
     };
   }, [latency, reliability, downlinkMbps, uplinkMbps, density, mobility, jitter]);
 
-  // Unified Trigger Analysis Function for both Prompting and Key-Value Pair modes
+  // Unified Trigger Analysis Function calling Pot SlicerAPI (/v1/generate/)
   const triggerAnalysis = useCallback(async () => {
     setAnalysisState('analyzing');
-    setAnalysisProgress(20);
+    setAnalysisProgress(15);
 
     if (inputMode === 'prompt') {
       if (!promptText.trim()) return;
-      setAnalysisPhase('Parsing natural language requirements & semantic intent...');
+      setAnalysisPhase('Intake: Validating NLP intent & normalizing requirements...');
 
       const specs = extractSpecsFromPrompt(promptText);
       setExtractedSpecs(specs);
-
-      const payload = {
-        mode: 'prompt',
-        prompt: promptText,
-        extractedRequirements: specs,
-      };
+      const candidate = generatePromptRecommendation(specs);
 
       try {
-        const backendPromise = fetch('/api/recommend-slice', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-          .then((res) => (res.ok ? res.json() : null))
-          .catch(() => null);
+        setAnalysisProgress(35);
+        setAnalysisPhase('Connecting to Pot SlicerAPI (/v1/generate)...');
+
+        const backendPromise = generateSliceRecommendation({
+          mode: 'prompt',
+          promptText,
+          specs,
+          candidateRecommendation: candidate,
+        });
+
+        await new Promise((r) => setTimeout(r, 400));
+        setAnalysisProgress(60);
+        setAnalysisPhase('Evaluating 3GPP Rel-18 5QI delay budgets & radio resource multiplexing...');
 
         await new Promise((r) => setTimeout(r, 450));
-        setAnalysisProgress(55);
-        setAnalysisPhase('Evaluating 3GPP 5QI delay budgets & radio resource multiplexing...');
-
-        await new Promise((r) => setTimeout(r, 550));
         setAnalysisProgress(85);
-        setAnalysisPhase('Synthesizing explainable telecom justification & UPF topology...');
+        setAnalysisPhase('Synthesizing explainable telecom justification & counterfactual sensitivity...');
 
-        const [serverResult] = await Promise.all([
+        const [resolvedResult] = await Promise.all([
           backendPromise,
-          new Promise((r) => setTimeout(r, 450)),
+          new Promise((r) => setTimeout(r, 400)),
         ]);
 
-        const recommendation = serverResult || generatePromptRecommendation(specs);
+        if (resolvedResult.source === 'backend') {
+          setBackendStatus({ online: true, checked: true });
+        }
 
         setAnalysisProgress(100);
         setAnalysisPhase('Optimization complete.');
-        setAnalysisResult(recommendation);
+        setAnalysisResult(resolvedResult);
         setAnalysisState('done');
       } catch {
-        const recommendation = generatePromptRecommendation(specs);
         setAnalysisProgress(100);
-        setAnalysisResult(recommendation);
+        setAnalysisResult(candidate);
         setAnalysisState('done');
       }
     } else {
-      setAnalysisPhase('Connecting to 5G Slice Provisioning backend...');
+      setAnalysisPhase('Intake: Validating parametric specifications & calculating bitrates...');
 
-      const payload = {
-        mode: 'key-value',
-        requirements: {
-          latency: Number(latency) || 0,
-          downlink: downlinkMbps,
-          uplink: uplinkMbps,
-          downlinkFormatted: `${downlink} ${downlinkUnit}`,
-          uplinkFormatted: `${uplink} ${uplinkUnit}`,
-          jitter,
-          reliability: Number(reliability) || 0,
-          mobility,
-          density: Number(density) || 0,
-        },
+      const specs = {
+        latency: Number(latency) || 0,
+        downlink: downlinkMbps,
+        uplink: uplinkMbps,
+        downlinkFormatted: `${downlink} ${downlinkUnit}`,
+        uplinkFormatted: `${uplink} ${uplinkUnit}`,
+        jitter,
+        reliability: Number(reliability) || 0,
+        mobility,
+        density: Number(density) || 0,
       };
 
       try {
-        const backendPromise = fetch('/api/recommend-slice', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-          .then((res) => (res.ok ? res.json() : null))
-          .catch(() => null);
+        setAnalysisProgress(35);
+        setAnalysisPhase('Connecting to Pot SlicerAPI (/v1/generate)...');
+
+        const backendPromise = generateSliceRecommendation({
+          mode: 'key-value',
+          promptText: '',
+          specs,
+          candidateRecommendation: computedRecommendation,
+        });
+
+        await new Promise((r) => setTimeout(r, 400));
+        setAnalysisProgress(60);
+        setAnalysisPhase('Evaluating 3GPP Rel-18 5QI delay budgets & radio resource multiplexing...');
 
         await new Promise((r) => setTimeout(r, 450));
-        setAnalysisProgress(55);
-        setAnalysisPhase('Evaluating 3GPP 5QI delay budgets & radio resource multiplexing...');
-
-        await new Promise((r) => setTimeout(r, 550));
         setAnalysisProgress(85);
-        setAnalysisPhase('Synthesizing explainable telecom justification & UPF topology...');
+        setAnalysisPhase('Synthesizing explainable telecom justification & counterfactual sensitivity...');
 
-        const [serverResult] = await Promise.all([
+        const [resolvedResult] = await Promise.all([
           backendPromise,
-          new Promise((r) => setTimeout(r, 450)),
+          new Promise((r) => setTimeout(r, 400)),
         ]);
+
+        if (resolvedResult.source === 'backend') {
+          setBackendStatus({ online: true, checked: true });
+        }
 
         setAnalysisProgress(100);
         setAnalysisPhase('Optimization complete.');
-        setAnalysisResult(serverResult || computedRecommendation);
+        setAnalysisResult(resolvedResult);
         setAnalysisState('done');
       } catch {
         setAnalysisProgress(100);
@@ -607,6 +640,7 @@ export default function NetworkSliceRecommender() {
       aiRecommendation: {
         sliceCategory: activeResult?.sliceName,
         sst: activeResult?.sst,
+        sd: activeResult?.sd || '0x000001',
         confidencePercentage: activeResult?.confidence,
         qosParameters: {
           fiveQi: activeResult?.fiveQi,
@@ -616,6 +650,38 @@ export default function NetworkSliceRecommender() {
         edgeDeploymentStrategy: activeResult?.edgeStrategy,
         justification: activeResult?.summary,
         keyDrivers: activeResult?.reasons,
+        counterFactuals: activeResult?.counterFactuals,
+        analysisSource: activeResult?.sourceBadge || 'SlicerAPI Engine',
+      },
+      backendContract: {
+        endpoint: '/v1/generate/',
+        model: 'GenerateResponse',
+        natural_query: isPrompt
+          ? promptText
+          : `Requirements: Latency ${latency}ms, DL ${downlinkMbps}Mbps, UL ${uplinkMbps}Mbps, Reliability ${reliability}%, Mobility ${mobility}, Density ${density}/km²`,
+        parameteric_query: isPrompt
+          ? {
+              latency: extractedSpecs?.latency,
+              downlink: extractedSpecs?.downlink,
+              uplink: extractedSpecs?.uplink,
+              reliability: extractedSpecs?.reliability,
+              mobility: extractedSpecs?.mobility,
+              density: extractedSpecs?.density,
+            }
+          : {
+              latency: Number(latency) || 0,
+              downlink: downlinkMbps,
+              uplink: uplinkMbps,
+              jitter,
+              reliability: Number(reliability) || 0,
+              mobility,
+              density: Number(density) || 0,
+            },
+        sst: String(activeResult?.sst || '1'),
+        sd: activeResult?.sd || '0x000001',
+        justification: activeResult?.summary || '',
+        counter_factuals: activeResult?.counterFactuals || '',
+        deployment_architecture: activeResult?.edgeStrategy || '',
       },
     };
 
@@ -688,6 +754,17 @@ export default function NetworkSliceRecommender() {
             <span className="mode-tab-title">Key-Value Pairs</span>
             <span className="mode-tab-badge">Step-by-Step</span>
           </button>
+        </div>
+        <div
+          className={`backend-status-pill ${backendStatus.online ? 'backend-status-pill--online' : 'backend-status-pill--simulated'}`}
+          title="Pot SlicerAPI backend status (/v1/generate/)"
+        >
+          <HugeiconsIcon icon={CloudServerIcon} size={13} strokeWidth={2.2} />
+          <span className="status-indicator-dot"></span>
+          <span className="status-label">
+            {backendStatus.online ? 'Pot SlicerAPI' : 'SlicerAPI (Local)'}
+          </span>
+          <span className="status-endpoint">/v1/generate</span>
         </div>
       </div>
 
@@ -781,7 +858,7 @@ export default function NetworkSliceRecommender() {
               <div className="rec-top-actions">
                 <div className="ai-verified-tag">
                   <HugeiconsIcon icon={Tick02Icon} size={15} strokeWidth={2.4} />
-                  <span>Analysis Returned by AI Engine (Direct Prompt)</span>
+                  <span>{activeResult.sourceBadge || 'Analysis Returned by SlicerAPI Engine'}</span>
                 </div>
                 <div className="rec-action-buttons">
                   <button
@@ -822,7 +899,8 @@ export default function NetworkSliceRecommender() {
 
               <div className="rec-header">
                 <div className="rec-slice-badge">
-                  <span className="rec-sst">3GPP SST {activeResult.sst}</span>
+                  <span className="rec-sst">3GPP SST-{activeResult.sst}</span>
+                  <span className="rec-sd">SD: {activeResult.sd || '0x000001'}</span>
                   <span className="rec-tag">{activeResult.sliceName}</span>
                 </div>
                 <div className="rec-score">
@@ -862,10 +940,27 @@ export default function NetworkSliceRecommender() {
                 </ul>
               </div>
 
+              {activeResult.counterFactuals && (
+                <div className="counterfactual-block">
+                  <div className="counterfactual-header">
+                    <span className="cf-badge">3GPP Sensitivity</span>
+                    <h4>Counterfactual Analysis</h4>
+                  </div>
+                  <p className="counterfactual-text">{activeResult.counterFactuals}</p>
+                </div>
+              )}
+
               <div className="edge-guideline">
                 <div className="edge-title">Core & Edge Deployment Architecture</div>
                 <div className="edge-desc">{activeResult.edgeStrategy}</div>
               </div>
+
+              {activeResult.rawResponse && (
+                <details className="backend-trace-details">
+                  <summary className="backend-trace-summary">Inspect SlicerAPI Contract Schema (pot: /v1/generate/)</summary>
+                  <pre className="backend-trace-json">{activeResult.rawResponse}</pre>
+                </details>
+              )}
 
               <div className="export-row-dual">
                 <button type="button" className="export-btn" onClick={exportConfig}>
@@ -1171,7 +1266,7 @@ export default function NetworkSliceRecommender() {
                   <div className="rec-top-actions">
                     <div className="ai-verified-tag">
                       <HugeiconsIcon icon={Tick02Icon} size={15} strokeWidth={2.4} />
-                      <span>Analysis Returned by AI Engine</span>
+                      <span>{activeResult.sourceBadge || 'Analysis Returned by SlicerAPI Engine'}</span>
                     </div>
                     <button type="button" className="re-analyze-btn" onClick={triggerAnalysis}>
                       ↻ Re-run Analysis
@@ -1180,7 +1275,8 @@ export default function NetworkSliceRecommender() {
 
                   <div className="rec-header">
                     <div className="rec-slice-badge">
-                      <span className="rec-sst">3GPP SST {activeResult.sst}</span>
+                      <span className="rec-sst">3GPP SST-{activeResult.sst}</span>
+                      <span className="rec-sd">SD: {activeResult.sd || '0x000001'}</span>
                       <span className="rec-tag">{activeResult.sliceName}</span>
                     </div>
                     <div className="rec-score">
@@ -1220,10 +1316,27 @@ export default function NetworkSliceRecommender() {
                     </ul>
                   </div>
 
+                  {activeResult.counterFactuals && (
+                    <div className="counterfactual-block">
+                      <div className="counterfactual-header">
+                        <span className="cf-badge">3GPP Sensitivity</span>
+                        <h4>Counterfactual Analysis</h4>
+                      </div>
+                      <p className="counterfactual-text">{activeResult.counterFactuals}</p>
+                    </div>
+                  )}
+
                   <div className="edge-guideline">
                     <div className="edge-title">Core & Edge Deployment Architecture</div>
                     <div className="edge-desc">{activeResult.edgeStrategy}</div>
                   </div>
+
+                  {activeResult.rawResponse && (
+                    <details className="backend-trace-details">
+                      <summary className="backend-trace-summary">Inspect SlicerAPI Contract Schema (pot: /v1/generate/)</summary>
+                      <pre className="backend-trace-json">{activeResult.rawResponse}</pre>
+                    </details>
+                  )}
 
                   <div className="export-row">
                     <button type="button" className="export-btn" onClick={exportConfig}>

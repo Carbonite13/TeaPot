@@ -1,16 +1,33 @@
-# React + Vite
+# TeaPot Frontend (`tea`)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+An intelligent 5G network slice recommendation platform built with Vite 8 and React 19.
 
-Currently, two official plugins are available:
+## Overview
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+`tea` provides a dual-input UI for application developers and network engineers:
+1. **Prompting (Direct AI)**: Natural language requirements processing.
+2. **Key-Value Pairs (Step-by-Step)**: Guided 3-step SLA & QoS telemetry configuration.
 
-## React Compiler
+## Backend Integration (`pot` FastAPI Server)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The frontend connects to the backend in `pot/` (`pot/src/SlicerAPI`):
+- **API Endpoint**: `/v1/generate/`
+- **Schema**: `GenerateResponse` (`natural_query`, `parameteric_query`, `sst`, `sd`, `justification`, `counter_factuals`, `deployment_architecture`, `raw_response`).
+- **Proxy Configuration**: `vite.config.js` proxies `/v1` requests to `http://localhost:8000` (configurable via `VITE_BACKEND_URL`).
+- **Resilience**: If the backend is running, the UI verifies against it. If offline, the frontend seamlessly operates in local simulation mode.
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+# Install dependencies
+npm install
+
+# Run frontend dev server (with /v1 proxy to backend)
+npm run dev
+
+# Run lint
+npm run lint
+
+# Build production bundle
+npm run build
+```
