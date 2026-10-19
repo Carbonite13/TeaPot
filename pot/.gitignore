@@ -12,3 +12,6 @@ uv.lock
 
 # ignore temp files
 temp_*
+
+# ignore watch files
+watch*
