@@ -1,0 +1,15 @@
+{
+  "category": "mMTC",
+  "display_name": "Massive Machine-Type Communications",
+  "profile_version": "1.0.0",
+  "targets": {
+    "latency_ms": 1000.0,
+    "throughput_mbps": 0.1,
+    "reliability_per": 0.01,
+    "mobility": ["stationary", "pedestrian"],
+    "device_density_per_km2": 1000000,
+    "guaranteed_throughput": false,
+    "criticality": ["routine"]
+  },
+  "source": "Simulation profile; values are engineering assumptions and are not asserted as standardized requirements."
+}

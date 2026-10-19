@@ -1,0 +1,16 @@
+explain_decision:
+  description: >
+    Explain the top category, probabilities, requirement fits, and smallest
+    counterfactuals using only this immutable trace: {trace}. Do not change,
+    recalculate, or round numbers. Revision note, if present: {review_feedback}.
+    Return concise prose.
+  expected_output: A plain-language explanation that preserves every quoted number exactly.
+  agent: reasoning_agent
+verify_explanation:
+  description: >
+    Compare this explanation against the complete numeric trace: {trace}.
+    Set valid to false if it contains any number not present in the
+    trace or misstates any listed probability, score, or counterfactual.
+  expected_output: A structured validity decision and any unsupported numeric claims.
+  agent: consistency_reviewer
+  context: [explain_decision]

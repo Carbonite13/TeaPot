@@ -1,0 +1,15 @@
+{
+  "name": "ambulance_telemetry",
+  "version": "1.0.0",
+  "description": "Emergency vehicle telemetry with safety-critical communications.",
+  "values": {
+    "latency_ms": 5,
+    "throughput_mbps": 5,
+    "throughput_guaranteed": true,
+    "reliability_per": 1e-6,
+    "mobility": "vehicular",
+    "device_density_per_km2": 20,
+    "arp_level": 1,
+    "criticality": "life_safety"
+  }
+}

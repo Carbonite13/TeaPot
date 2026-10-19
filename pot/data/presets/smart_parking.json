@@ -1,0 +1,15 @@
+{
+  "name": "smart_parking",
+  "version": "1.0.0",
+  "description": "Dense stationary parking occupancy sensors with modest throughput needs.",
+  "values": {
+    "latency_ms": 500,
+    "throughput_mbps": 0.01,
+    "throughput_guaranteed": false,
+    "reliability_per": 0.001,
+    "mobility": "stationary",
+    "device_density_per_km2": 500000,
+    "arp_level": 8,
+    "criticality": "routine"
+  }
+}

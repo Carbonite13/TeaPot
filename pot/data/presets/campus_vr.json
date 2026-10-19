@@ -1,0 +1,15 @@
+{
+  "name": "campus_vr",
+  "version": "1.0.0",
+  "description": "High-bandwidth campus virtual reality with moderate latency tolerance.",
+  "values": {
+    "latency_ms": 25,
+    "throughput_mbps": 200,
+    "throughput_guaranteed": false,
+    "reliability_per": 0.0001,
+    "mobility": "pedestrian",
+    "device_density_per_km2": 5000,
+    "arp_level": 6,
+    "criticality": "important"
+  }
+}
