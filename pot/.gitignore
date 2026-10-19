@@ -2,3 +2,16 @@
 __pycache__/
 lib/
 .DS_Store
+
+# ignore watch files
+watch_*
+
+# ignore poetry lock files
+poetry.lock
+uv.lock
+
+# ignore temp files
+temp_*
+
+# ignore watch files
+watch*
