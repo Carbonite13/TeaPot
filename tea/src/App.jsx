@@ -17,6 +17,16 @@ function App() {
           glow={0.08}
         />
       </div>
+      <header className="app-brand-header">
+        <div className="brand-logo-badge">
+          <img
+            src="/logo.svg"
+            alt="TeaPot Logo"
+            className="brand-logo-img"
+          />
+          <span className="brand-name">TeaPot</span>
+        </div>
+      </header>
       <main className="app-main">
         <NetworkSliceRecommender />
       </main>
