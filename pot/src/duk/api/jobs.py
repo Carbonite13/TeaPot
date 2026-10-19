@@ -1,5 +1,6 @@
 """Threaded decision jobs with progress snapshots for polling and SSE clients."""
 
+import asyncio
 import json
 import threading
 import uuid
@@ -62,8 +63,12 @@ class DecisionJobManager:
         """Execute a Flow and store either its typed result or safe error details."""
         self._progress(job, "started", "Decision flow started.")
         try:
-            flow = DecisionFlow(progress_callback=lambda status, message: self._progress(job, status, message))
-            flow.kickoff(inputs={"request_data": request_data})
+            flow = DecisionFlow(
+                suppress_flow_events=True,
+                tracing=False,
+                progress_callback=lambda status, message: self._progress(job, status, message),
+            )
+            asyncio.run(flow.run_pipeline(request_data))
             job.result = DecisionResult.model_validate(flow.state.final_data)
             self._progress(job, "completed", "Decision is ready.")
         except ValidationError as exc:

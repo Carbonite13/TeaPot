@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from duk.crews.configuration import load_yaml
 from duk.crews.runtime import configure_runtime_storage
-from duk.llm import build_llm
+from duk.llm import build_llm, model_config
 
 
 class Explanation(BaseModel):
@@ -83,18 +83,23 @@ class ReasoningCrew:
         configure_runtime_storage()
         return Crew(agents=self.agents, tasks=self.tasks, process=Process.sequential, verbose=False)
 
-    def run(self, inputs: dict[str, Any]) -> tuple[Explanation, ReviewResult]:
+    async def run(self, inputs: dict[str, Any]) -> tuple[Explanation, ReviewResult]:
         """Run the configured reasoner and retry once with its configured fallback."""
         crew = self.crew()
         try:
-            result = crew.kickoff(inputs=inputs)
+            result = await crew.akickoff(inputs=inputs)
         except Exception:
             fallback = model_config()["roles"]["reasoner"].get("fallback", [])
             if not fallback:
                 raise
             self.agents[0].llm = build_llm("reasoner", fallback[0])
-            result = Crew(agents=self.agents, tasks=self.tasks, process=Process.sequential, verbose=False).kickoff(
-                inputs=inputs
+            result = await Crew(
+                agents=self.agents,
+                tasks=self.tasks,
+                process=Process.sequential,
+                verbose=False,
+            ).akickoff(
+                inputs=inputs,
             )
         explanation = result.tasks_output[0].pydantic
         review = result.tasks_output[1].pydantic

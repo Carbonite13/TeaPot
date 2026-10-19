@@ -13,7 +13,7 @@ def _run_flow(monkeypatch, tmp_path, outputs):
     calls = []
 
     class MockReasoningCrew:
-        def run(self, inputs):
+        async def run(self, inputs):
             calls.append(inputs)
             return outputs[len(calls) - 1]
 
@@ -26,10 +26,15 @@ def _run_flow(monkeypatch, tmp_path, outputs):
     with crewai_event_bus.scoped_handlers():
         flow = DecisionFlow(suppress_flow_events=True, tracing=False)
         flow.state.request_data = {"preset_name": "campus_vr"}
-        intake = flow.intake_layer()
-        analysis = flow.analysis_layer(intake)
-        reasoning = flow.reasoning_layer(analysis)
-        flow.audit_layer(reasoning)
+        import asyncio
+
+        async def run_layers() -> None:
+            intake = await flow.intake_layer()
+            analysis = await flow.analysis_layer(intake)
+            reasoning = await flow.reasoning_layer(analysis)
+            await flow.audit_layer(reasoning)
+
+        asyncio.run(run_layers())
     return flow.state.final_data, calls
 
 
