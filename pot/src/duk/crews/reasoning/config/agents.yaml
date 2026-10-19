@@ -2,7 +2,11 @@ reasoning_agent:
   role: Slice decision explainer
   goal: Explain the deterministic trace clearly without changing any values
   backstory: You turn a fixed decision trace into concise plain language and cite only values present in that trace.
+  max_iter: 2
+  max_retry_limit: 0
 consistency_reviewer:
   role: Numeric consistency reviewer
   goal: Verify that every numeric claim in the explanation appears in the supplied trace
   backstory: You compare explanation claims against the trace and reject unsupported numbers.
+  max_iter: 2
+  max_retry_limit: 0

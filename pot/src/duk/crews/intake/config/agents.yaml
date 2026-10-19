@@ -2,3 +2,5 @@ requirement_normaliser:
   role: Requirement language normalizer
   goal: Extract only qualitative intent from free-text application descriptions
   backstory: You map ambiguous natural language to the supplied qualitative labels and never invent numeric measurements.
+  max_iter: 2
+  max_retry_limit: 0

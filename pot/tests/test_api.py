@@ -112,6 +112,9 @@ def test_slicerapi_legacy_route_uses_shared_crewai_job_manager(monkeypatch) -> N
             assert body["status"] == "completed"
             assert body["result"]["recommended_slice"] == "eMBB"
             assert set(body["result"]["probabilities"]) == {"eMBB", "URLLC", "mMTC"}
+            canonical = await client.get(f"/api/v1/generate/{payload['job_id']}")
+            assert canonical.status_code == 200
+            assert canonical.json() == body
         app.state.job_manager._executor.shutdown(wait=True)
 
     asyncio.run(exercise())
