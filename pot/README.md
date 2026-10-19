@@ -1,56 +1,38 @@
-# {{crew_name}} Crew
+# DUK Slice Advisor
 
-Welcome to the {{crew_name}} Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
+DUK Slice Advisor is a decision-support API and browser interface that recommends eMBB, URLLC, or mMTC from six application connectivity requirements. It returns deterministic category probabilities, input provenance, bounded counterfactuals, and a reviewed natural-language explanation. Provisioning is simulated; no live network provider is contacted.
 
-## Installation
-
-Ensure you have Python >=3.10 <3.14 installed on your system. This project uses [UV](https://docs.astral.sh/uv/) for dependency management and package handling, offering a seamless setup and execution experience.
-
-First, if you haven't already, install uv:
+## Quick start
 
 ```bash
-pip install uv
+poetry install --with dev
+cp .env.example .env
+# Set CIRRASCALE_API_KEY in .env for description normalisation and explanations.
+poetry run uvicorn duk.main:app --reload --env-file .env
 ```
 
-Next, navigate to your project directory and install the dependencies:
-
-(Optional) Lock the dependencies and install them by using the CLI command:
-```bash
-crewai install
-```
-
-### Customizing
-
-**Add your `OPENAI_API_KEY` into the `.env` file**
-
-- Modify `src/pot/config/agents.yaml` to define your agents
-- Modify `src/pot/config/tasks.yaml` to define your tasks
-- Modify `src/pot/crew.py` to add your own logic, tools and specific args
-- Modify `src/pot/main.py` to add custom inputs for your agents and tasks
-
-## Running the Project
-
-To kickstart your flow and begin execution, run this from the root folder of your project:
+The API reference is at `http://localhost:8000/docs`. To start the React client, use another terminal:
 
 ```bash
-crewai run
+cd frontend
+npm install
+npm run dev
 ```
 
-This command initializes the Pot Flow as defined in your configuration.
+Run automated checks with `poetry run pytest`.
 
-This example, unmodified, will run a content creation flow on AI Agents and save the output to `output/post.md`.
+## API workflow
 
-## Understanding Your Crew
+`POST /api/v1/generate` returns `202 Accepted` and a job ID. Poll the returned `status_url` or subscribe to its `events_url` using server-sent events. `GET /api/v1/presets` lists the bundled profiles. See [docs/api.md](docs/api.md) for request examples and response models.
 
-The Pot Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
+## Model configuration
 
-## Support
+The role-to-model mapping and Cirrascale-compatible API endpoint are configured in `config/models.toml`. Set `CIRRASCALE_API_KEY` in the environment; secrets are never placed in TOML or source. Model tags in the default config must be confirmed against the account’s Cirrascale model catalogue. The Qwen2.5 32B optional checkpoint remains explicitly unconfirmed.
 
-For support, questions, or feedback regarding the {{crew_name}} Crew or crewAI.
+## Project guidance
 
-- Visit our [documentation](https://docs.crewai.com)
-- Reach out to us through our [GitHub repository](https://github.com/joaomdmoura/crewai)
-- [Join our Discord](https://discord.com/invite/X4JWnZnxPb)
-- [Chat with our docs](https://chatg.pt/DWjSBZn)
+- [Setup and development](docs/setup.md)
+- [HTTP API](docs/api.md)
+- [Architecture and decision boundaries](docs/architecture.md)
 
-Let's create wonders together with the power and simplicity of crewAI.
+Specification clause references in the scoring metadata are marked “to verify” where they have not been checked against the current published releases. Scoring weights and profile targets are application policy values, not 3GPP or ITU mandated category scores.

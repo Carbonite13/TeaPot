@@ -2,6 +2,7 @@
 
 import json
 import re
+import traceback
 from collections.abc import Callable
 from typing import Any, ClassVar
 
@@ -64,7 +65,7 @@ def _jsonable(value: Any) -> Any:
 
 
 class DecisionFlow(Flow[DecisionState]):
-    """Top-level flow with progress callback injection for API jobs."""
+    """Top-level flow with API-safe async execution and progress callbacks."""
 
     _skip_auto_memory: ClassVar[bool] = True
     progress_callback: Callable[[str, str], None] | None = None
@@ -80,8 +81,22 @@ class DecisionFlow(Flow[DecisionState]):
             self.progress_callback(status, message)
         logger.info("decision_stage", status=status, message=message)
 
+    async def run_pipeline(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Run decorated Flow stages sequentially without CrewAI's sync thread handoff.
+
+        CrewAI 1.15.28's synchronous Flow kickoff stalls in its internal
+        ``asyncio.to_thread`` completion path in the supported sandbox runtime.
+        This explicit async entry point executes the same typed stage methods,
+        while CrewAI crews still perform the model-backed intake and reasoning.
+        """
+        self.state.request_data = request_data
+        intake = await self.intake_layer()
+        analysis = await self.analysis_layer(intake)
+        reasoning = await self.reasoning_layer(analysis)
+        return await self.audit_layer(reasoning)
+
     @start()
-    def intake_layer(self) -> dict[str, Any]:
+    async def intake_layer(self) -> dict[str, Any]:
         """Validate, merge preset and declared values, and tag every field."""
         self._progress("intake", "Validating inputs and resolving preset values.")
         request = GenerateRequest.model_validate(self.state.request_data)
@@ -101,13 +116,15 @@ class DecisionFlow(Flow[DecisionState]):
             source = "request" if origin is Provenance.DECLARED else f"{preset.name}@{preset.version}"
             sourced[name] = SourcedValue(value=getattr(validated, name), provenance=origin, source=source)
         normalized = NormalizedRequirements.model_validate(sourced)
+        self._progress("intake_normalized", "All fields are validated and have provenance tags.")
         if request.description:
-            result = IntakeNormalizationCrew().crew().kickoff(inputs={"free_text": request.description})
+            result = await IntakeNormalizationCrew().crew().akickoff(inputs={"free_text": request.description})
             hints = result.pydantic
             self.state.layer_snapshots["intake"] = {"qualitative_hints": _jsonable(hints)}
         else:
             self.state.layer_snapshots["intake"] = {"qualitative_hints": None}
         self.state.normalized_data = normalized.model_dump(mode="json")
+        self._progress("intake_serialized", "Normalized requirements are ready for deterministic analysis.")
         self.state.layer_snapshots["intake"]["requirements"] = self.state.normalized_data
         self.state.layer_snapshots["intake"]["preset"] = (
             {"name": preset.name, "version": preset.version} if preset else None
@@ -115,14 +132,16 @@ class DecisionFlow(Flow[DecisionState]):
         return self.state.normalized_data
 
     @listen(intake_layer)
-    def analysis_layer(self, _: dict[str, Any]) -> dict[str, Any]:
+    async def analysis_layer(self, _: dict[str, Any]) -> dict[str, Any]:
         """Run the provider lookup, fit scores, probabilities, and counterfactuals."""
         self._progress("analysis", "Computing slice fit scores and bounded counterfactuals.")
         requirements = NormalizedRequirements.model_validate(self.state.normalized_data)
         profiles = SimulatedSliceProvider().get_profiles()
         weights = load_scoring_weights()
         trace = score_requirements(requirements, profiles, weights)
+        self._progress("analysis_scored", "Category fit scores and probabilities are calculated.")
         counterfactuals = search_counterfactuals(requirements, profiles, weights)
+        self._progress("analysis_counterfactuals", "Counterfactual candidates were checked with the scorer.")
         self.state.trace_data = trace.model_dump(mode="json")
         self.state.counterfactual_data = [item.model_dump(mode="json") for item in counterfactuals]
         self.state.layer_snapshots["analysis"] = {
@@ -130,10 +149,11 @@ class DecisionFlow(Flow[DecisionState]):
             "counterfactuals": self.state.counterfactual_data,
             "catalogue": [{"category": item.category, "version": item.profile_version} for item in profiles],
         }
+        self._progress("analysis_complete", "Deterministic analysis is ready for explanation.")
         return self.state.layer_snapshots["analysis"]
 
     @listen(analysis_layer)
-    def reasoning_layer(self, _: dict[str, Any]) -> dict[str, Any]:
+    async def reasoning_layer(self, _: dict[str, Any]) -> dict[str, Any]:
         """Ask for prose, review it, retry once, then fall back to no prose."""
         self._progress("reasoning", "Writing and checking a trace-bound explanation.")
         profiles = SimulatedSliceProvider().get_profiles()
@@ -150,7 +170,7 @@ class DecisionFlow(Flow[DecisionState]):
         review_issues: list[str] = []
         for attempt in range(2):
             try:
-                explanation, review = crew.run({
+                explanation, review = await crew.run({
                     "trace": trace_text,
                     "explanation": explanation.text if explanation else "",
                     "review_feedback": "; ".join(review_issues) if review_issues else "No previous review.",
@@ -161,7 +181,14 @@ class DecisionFlow(Flow[DecisionState]):
                     break
                 review_issues.append("Explanation contains a numeric claim absent from the deterministic trace.")
             except Exception as exc:
-                logger.warning("reasoning_attempt_failed", attempt=attempt + 1, error_type=type(exc).__name__)
+                frames = traceback.extract_tb(exc.__traceback__)
+                location = frames[-1] if frames else None
+                logger.warning(
+                    "reasoning_attempt_failed",
+                    attempt=attempt + 1,
+                    error_type=type(exc).__name__,
+                    error_site=(f"{location.name}:{location.lineno}" if location else "unknown"),
+                )
                 review_issues = ["Reasoning or review execution failed."]
         reasoning_text = explanation.text if explanation and review_valid else ""
         if not reasoning_text:
@@ -194,7 +221,7 @@ class DecisionFlow(Flow[DecisionState]):
         return self.state.final_data
 
     @listen(reasoning_layer)
-    def audit_layer(self, _: dict[str, Any]) -> dict[str, Any]:
+    async def audit_layer(self, _: dict[str, Any]) -> dict[str, Any]:
         """Write the sole idempotent decision record from the orchestrator."""
         self._progress("audit", "Recording the completed decision and provenance.")
         request_data = self.state.raw_input

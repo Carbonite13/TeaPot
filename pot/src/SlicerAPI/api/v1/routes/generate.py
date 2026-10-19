@@ -1,11 +1,67 @@
-from fastapi import APIRouter, Body
-from fastapi.responses import JSONResponse
-from models.generate import GenerateResponse
+"""SlicerAPI endpoints that submit and observe CrewAI-backed DUK decisions."""
 
-router = APIRouter(
-    tags=["generate"]
-)
+import asyncio
+import json
+from collections.abc import AsyncIterator
 
-@router.get("/", response_class=JSONResponse, response_model=GenerateResponse, status_code=200)
-async def generate(content: GenerateResponse = Body()):
-    return GenerateResponse(sst=content.sst) # pyright: ignore
+from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
+
+from duk.api.jobs import DecisionJobManager
+from duk.api.routes import get_decision_status, get_job_manager
+from SlicerAPI.models.generate import GenerateAccepted, GenerateRequest, GenerateResponse
+
+router = APIRouter(tags=["SlicerAPI"])
+
+
+@router.post("", response_model=GenerateAccepted, status_code=status.HTTP_202_ACCEPTED)
+async def generate(payload: GenerateRequest, request: Request) -> GenerateAccepted:
+    """Submit a typed SlicerAPI request to the shared CrewAI job manager."""
+    try:
+        decision_request = payload.to_decision_request()
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
+    job_id = get_job_manager(request).submit(decision_request)
+    return GenerateAccepted(
+        job_id=job_id,
+        status="queued",
+        status_url=f"/v1/generate/{job_id}",
+        events_url=f"/v1/generate/{job_id}/events",
+    )
+
+
+@router.get("/{job_id}", response_model=GenerateResponse)
+async def get_status(job_id: str, request: Request) -> GenerateResponse:
+    """Return job progress and the same typed decision result as the DUK API."""
+    result = await get_decision_status(job_id, request)
+    return GenerateResponse.model_validate(result.model_dump())
+
+
+@router.get("/{job_id}/events")
+async def stream_events(job_id: str, request: Request) -> StreamingResponse:
+    """Stream progress for a submitted decision as server-sent events."""
+    manager: DecisionJobManager = get_job_manager(request)
+    if manager.get(job_id) is None:
+        raise HTTPException(status_code=404, detail="Decision job not found")
+
+    async def event_stream() -> AsyncIterator[str]:
+        cursor = 0
+        while True:
+            if await request.is_disconnected():
+                break
+            snapshot = manager.events(job_id, cursor)
+            if snapshot is None:
+                break
+            events, current_status, cursor = snapshot
+            for event in events:
+                yield f"id: {event.sequence}\nevent: progress\ndata: {event.model_dump_json()}\n\n"
+            if current_status in {"completed", "failed"} and not events:
+                yield f"event: done\ndata: {json.dumps({'status': current_status})}\n\n"
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+__all__ = ["router"]
