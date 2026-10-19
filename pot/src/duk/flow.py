@@ -7,12 +7,15 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 import structlog
+from duk.crews.runtime import configure_runtime_storage
+
+configure_runtime_storage()
+
 from crewai.flow import Flow, listen, start
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from duk.audit.log import JsonlAuditWriter, new_record
 from duk.crews.intake.crew import IntakeNormalizationCrew
-from duk.crews.runtime import configure_runtime_storage
 from duk.crews.reasoning.crew import Explanation, ReasoningCrew
 from duk.schemas.api import GenerateRequest
 from duk.schemas.requirements import (
@@ -118,9 +121,16 @@ class DecisionFlow(Flow[DecisionState]):
         normalized = NormalizedRequirements.model_validate(sourced)
         self._progress("intake_normalized", "All fields are validated and have provenance tags.")
         if request.description:
-            result = await IntakeNormalizationCrew().crew().akickoff(inputs={"free_text": request.description})
-            hints = result.pydantic
-            self.state.layer_snapshots["intake"] = {"qualitative_hints": _jsonable(hints)}
+            try:
+                result = await IntakeNormalizationCrew().crew().akickoff(inputs={"free_text": request.description})
+                hints = result.pydantic
+                self.state.layer_snapshots["intake"] = {"qualitative_hints": _jsonable(hints)}
+            except Exception as exc:
+                logger.warning("intake_normalization_failed", error_type=type(exc).__name__, error=str(exc))
+                self.state.layer_snapshots["intake"] = {
+                    "qualitative_hints": None,
+                    "note": "Intake normalization LLM unavailable; proceeded with validated numeric requirements.",
+                }
         else:
             self.state.layer_snapshots["intake"] = {"qualitative_hints": None}
         self.state.normalized_data = normalized.model_dump(mode="json")

@@ -5,24 +5,25 @@ api_key_env = "CIRRASCALE_API_KEY"
 timeout_seconds = 90
 
 [roles.intake_normaliser]
-model = "Qwen/Qwen3-8B"
+model = "Llama-3.1-8B"
 temperature = 0.0
 fallback = []
-additional_params = { enable_thinking = false }
+additional_params = {}
 
 [roles.reasoner]
-model = "meta-llama/Llama-3.3-70B-Instruct"
+model = "Llama-3.3-70B"
 temperature = 0.2
-fallback = ["meta-llama/Llama-3.1-8B-Instruct"]
+fallback = ["Llama-3.1-8B"]
 
 [roles.consistency_reviewer]
-model = "meta-llama/Llama-3.1-8B-Instruct"
+model = "Llama-3.1-8B"
 temperature = 0.0
 fallback = []
 
 [roles.alternative_reasoner]
-model = "Qwen/Qwen2.5-32B-Instruct"
+model = "DeepSeek-R1-Distill-Llama-70B"
 temperature = 0.2
 fallback = []
-confirmed = false
-confirmation_note = "Unconfirmed checkpoint; user must confirm exact Qwen2.5 32B model ID."
+confirmed = true
+confirmation_note = "Confirmed from Cirrascale model catalogue: ['DeepSeek-R1-Distill-Llama-70B', 'Llama-3.1-8B', 'Llama-3.3-70B', 'Qwen-QwQ-32B']."
+

@@ -197,12 +197,13 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore that
-#   can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#   and can be added to the global gitignore or merged into this file. However, if you prefer, you
-#   could uncomment the following to ignore the entire vscode folder
-# .vscode/
-# Temporary file for partial code execution
+# Visual Studio Code & IDEs
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.sublime-project
+*.sublime-workspace
 tempCodeRunnerFile.py
 
 # Ruff stuff:
@@ -219,6 +220,38 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Project Runtime & Decision Audit Logs
+data/runtime/
+**/data/runtime/
+data/audit/*.jsonl
+**/data/audit/*.jsonl
+!data/audit/.gitkeep
+!**/data/audit/.gitkeep
+
+# CrewAI & Vector Store / SQLite Data
+.crewai/
+**/crewai/
+chroma/
+*.chroma
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Scratch & Temporary Debug Scripts
+scratch/
+**/scratch/
+scratch_*.py
+**/scratch_*.py
+debug_*.py
+**/debug_*.py
+test_*_direct.py
+**/test_*_direct.py
+
 # Node / Frontend
 node_modules/
 dist/
@@ -226,6 +259,10 @@ dist-ssr/
 build/
 .pnp
 .pnp.js
+.vite/
+**/.vite/
+.eslintcache
+.stylelintcache
 
 # Frontend logs
 npm-debug.log*
@@ -236,15 +273,21 @@ lerna-debug.log*
 
 # Environment & local settings
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.template
 *.local
 
 # OS and Editor files
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.bak
+

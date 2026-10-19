@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
+from typing import Any
+
 from duk.api.jobs import DecisionJobManager
 from duk.api.routes import get_decision_status, get_job_manager
 from SlicerAPI.models.generate import GenerateAccepted, GenerateRequest, GenerateResponse
@@ -15,7 +17,21 @@ from SlicerAPI.models.generate import GenerateAccepted, GenerateRequest, Generat
 router = APIRouter(tags=["SlicerAPI"])
 
 
+@router.get("", summary="SlicerAPI Status & Health Check")
+@router.get("/", summary="SlicerAPI Status & Health Check", include_in_schema=False)
+async def get_slicerapi_info() -> dict[str, Any]:
+    """Health and discovery endpoint for the legacy SlicerAPI route."""
+    return {
+        "status": "online",
+        "service": "SlicerAPI",
+        "endpoint": "/v1/generate",
+        "method": "POST",
+        "description": "Submit a 5G slice requirements request via POST /v1/generate. See /docs for schema.",
+    }
+
+
 @router.post("", response_model=GenerateAccepted, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/", response_model=GenerateAccepted, status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
 async def generate(payload: GenerateRequest, request: Request) -> GenerateAccepted:
     """Submit a typed SlicerAPI request to the shared CrewAI job manager."""
     try:
@@ -32,6 +48,7 @@ async def generate(payload: GenerateRequest, request: Request) -> GenerateAccept
 
 
 @router.get("/{job_id}", response_model=GenerateResponse)
+@router.get("/{job_id}/", response_model=GenerateResponse, include_in_schema=False)
 async def get_status(job_id: str, request: Request) -> GenerateResponse:
     """Return job progress and the same typed decision result as the DUK API."""
     result = await get_decision_status(job_id, request)
@@ -39,6 +56,7 @@ async def get_status(job_id: str, request: Request) -> GenerateResponse:
 
 
 @router.get("/{job_id}/events")
+@router.get("/{job_id}/events/", include_in_schema=False)
 async def stream_events(job_id: str, request: Request) -> StreamingResponse:
     """Stream progress for a submitted decision as server-sent events."""
     manager: DecisionJobManager = get_job_manager(request)

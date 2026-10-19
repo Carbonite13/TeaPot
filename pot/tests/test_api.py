@@ -143,3 +143,30 @@ def test_slicerapi_rejects_inconsistent_and_unknown_requirement_formats() -> Non
         assert "throughput_mbs" in typo.text
 
     asyncio.run(exercise())
+
+
+def test_root_and_discovery_routes_return_status() -> None:
+    """Verify that root, api, v1, and generate GET health endpoints return 200."""
+
+    async def exercise() -> None:
+        async with AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test") as client:
+            for path in [
+                "/",
+                "/api",
+                "/api/",
+                "/v1",
+                "/v1/",
+                "/api/v1",
+                "/api/v1/",
+                "/api/v1/generate",
+                "/api/v1/generate/",
+                "/v1/generate",
+                "/v1/generate/",
+                "/api/v1/presets",
+                "/api/v1/presets/",
+            ]:
+                response = await client.get(path)
+                assert response.status_code == 200, f"Expected 200 for {path}, got {response.status_code}"
+
+    asyncio.run(exercise())
+

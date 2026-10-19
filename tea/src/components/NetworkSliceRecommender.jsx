@@ -1,9 +1,9 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Stepper, { Step } from './Stepper';
 import AnalyseButton from './AnalyseButton';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Tick02Icon, AiSparklesIcon, SlidersHorizontalIcon, CloudServerIcon } from '@hugeicons/core-free-icons';
-import { generateSliceRecommendation, checkBackendStatus } from '../services/slicerApi';
+import { Tick02Icon, AiSparklesIcon, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
+import { generateSliceRecommendation, buildGenerateRequest } from '../services/slicerApi';
 import './NetworkSliceRecommender.css';
 
 function extractSpecsFromPrompt(text) {
@@ -304,9 +304,45 @@ const fromMbps = (mbpsVal, targetUnit) => {
   return num;
 };
 
+const WORKLOAD_PRESETS = [
+  {
+    id: 'ambulance_telemetry',
+    label: 'Ambulance Telemetry',
+    category: 'URLLC',
+    description: 'Emergency vehicle telemetry with safety-critical communications.',
+    prompt: 'Emergency ambulance telemetry streaming real-time patient vitals, telemetry, and critical diagnostics requiring ultra-reliable 99.9999% SLA and 5ms latency with vehicular mobility.',
+    specs: { latency: 5, downlink: 5, downlinkUnit: 'Mbps', uplink: 5, uplinkUnit: 'Mbps', reliability: 99.9999, mobility: 'Vehicular (<120 km/h)', density: 20, jitter: 'Ultra-Low (<1ms)', criticality: 'life_safety' },
+  },
+  {
+    id: 'campus_vr',
+    label: 'Campus VR',
+    category: 'eMBB',
+    description: 'High bandwidth for pedestrian virtual reality.',
+    prompt: 'High bandwidth for pedestrian virtual reality campus training with 250 Mbps downlink streaming, 10ms latency, and pedestrian mobility.',
+    specs: { latency: 10, downlink: 250, downlinkUnit: 'Mbps', uplink: 25, uplinkUnit: 'Mbps', reliability: 99.9, mobility: 'Pedestrian (<10 km/h)', density: 500, jitter: 'Low (<5ms)', criticality: 'routine' },
+  },
+  {
+    id: 'smart_parking',
+    label: 'Smart Parking',
+    category: 'mMTC',
+    description: 'Massive IoT smart parking sensor density.',
+    prompt: 'Massive IoT smart parking sensor network connecting 50,000 devices/km² with periodic 0.1 Mbps telemetry and tolerant 100ms latency.',
+    specs: { latency: 100, downlink: 100, downlinkUnit: 'Kbps', uplink: 50, uplinkUnit: 'Kbps', reliability: 99.0, mobility: 'Stationary', density: 50000, jitter: 'Standard (<20ms)', criticality: 'routine' },
+  },
+  {
+    id: 'drone_surveillance',
+    label: 'Drone Surveillance',
+    category: 'V2X',
+    description: 'Autonomous UAV surveillance with 4K video uplink.',
+    prompt: 'Deploying autonomous surveillance drones over city logistics hubs requiring sub-10ms latency, 50 Mbps 4K video uplink, and 99.999% ultra-reliable connectivity with vehicular mobility.',
+    specs: { latency: 8, downlink: 120, downlinkUnit: 'Mbps', uplink: 45, uplinkUnit: 'Mbps', reliability: 99.999, mobility: 'Vehicular (<120 km/h)', density: 1500, jitter: 'Ultra-Low (<1ms)', criticality: 'life_safety' },
+  },
+];
+
 export default function NetworkSliceRecommender() {
   // Input Mode: 'prompt' (direct natural language) vs 'key-value' (step-by-step form)
   const [inputMode, setInputMode] = useState('prompt');
+  const [selectedPreset, setSelectedPreset] = useState('drone_surveillance');
 
   // Prompt Text & Extracted Specs
   const [promptText, setPromptText] = useState(
@@ -338,24 +374,26 @@ export default function NetworkSliceRecommender() {
   const [analysisResult, setAnalysisResult] = useState(null);
 
   const [copied, setCopied] = useState(false);
-  const [backendStatus, setBackendStatus] = useState({ online: false, checked: false });
-
-  useEffect(() => {
-    let isMounted = true;
-    checkBackendStatus().then((res) => {
-      if (isMounted) {
-        setBackendStatus({ online: res.online, checked: true });
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   const invalidateAnalysis = useCallback(() => {
     setAnalysisState('idle');
     setAnalysisResult(null);
   }, []);
+
+  const applyPreset = useCallback((preset) => {
+    setSelectedPreset(preset.id);
+    setPromptText(preset.prompt);
+    setLatency(preset.specs.latency);
+    setDownlink(preset.specs.downlink);
+    setDownlinkUnit(preset.specs.downlinkUnit);
+    setUplink(preset.specs.uplink);
+    setUplinkUnit(preset.specs.uplinkUnit);
+    setReliability(preset.specs.reliability);
+    setMobility(preset.specs.mobility);
+    setDensity(preset.specs.density);
+    setJitter(preset.specs.jitter);
+    invalidateAnalysis();
+  }, [invalidateAnalysis]);
 
   const handleDownlinkUnitChange = useCallback((newUnit) => {
     if (downlink !== '' && !isNaN(Number(downlink))) {
@@ -499,129 +537,104 @@ export default function NetworkSliceRecommender() {
     };
   }, [latency, reliability, downlinkMbps, uplinkMbps, density, mobility, jitter]);
 
-  // Unified Trigger Analysis Function calling Pot SlicerAPI (/v1/generate/)
+  // Unified Trigger Analysis Function calling Pot backend (/api/v1/generate or /v1/generate/)
   const triggerAnalysis = useCallback(async () => {
     setAnalysisState('analyzing');
     setAnalysisProgress(15);
+    setAnalysisPhase('Initiating analysis flow...');
 
-    if (inputMode === 'prompt') {
+    const isPrompt = inputMode === 'prompt';
+    const specs = isPrompt
+      ? extractSpecsFromPrompt(promptText)
+      : {
+          latency: Number(latency) || 0,
+          downlink: downlinkMbps,
+          uplink: uplinkMbps,
+          downlinkFormatted: `${downlink} ${downlinkUnit}`,
+          uplinkFormatted: `${uplink} ${uplinkUnit}`,
+          jitter,
+          reliability: Number(reliability) || 0,
+          mobility,
+          density: Number(density) || 0,
+        };
+
+    if (isPrompt) {
       if (!promptText.trim()) return;
-      setAnalysisPhase('Intake: Validating NLP intent & normalizing requirements...');
-
-      const specs = extractSpecsFromPrompt(promptText);
       setExtractedSpecs(specs);
-      const candidate = generatePromptRecommendation(specs);
-
-      try {
-        setAnalysisProgress(35);
-        setAnalysisPhase('Connecting to Pot SlicerAPI (/v1/generate)...');
-
-        const backendPromise = generateSliceRecommendation({
-          mode: 'prompt',
-          promptText,
-          specs,
-          candidateRecommendation: candidate,
-        });
-
-        await new Promise((r) => setTimeout(r, 400));
-        setAnalysisProgress(60);
-        setAnalysisPhase('Evaluating 3GPP Rel-18 5QI delay budgets & radio resource multiplexing...');
-
-        await new Promise((r) => setTimeout(r, 450));
-        setAnalysisProgress(85);
-        setAnalysisPhase('Synthesizing explainable telecom justification & counterfactual sensitivity...');
-
-        const [resolvedResult] = await Promise.all([
-          backendPromise,
-          new Promise((r) => setTimeout(r, 400)),
-        ]);
-
-        if (resolvedResult.source === 'backend') {
-          setBackendStatus({ online: true, checked: true });
-        }
-
-        setAnalysisProgress(100);
-        setAnalysisPhase('Optimization complete.');
-        setAnalysisResult(resolvedResult);
-        setAnalysisState('done');
-      } catch {
-        setAnalysisProgress(100);
-        setAnalysisResult(candidate);
-        setAnalysisState('done');
-      }
-    } else {
-      setAnalysisPhase('Intake: Validating parametric specifications & calculating bitrates...');
-
-      const specs = {
-        latency: Number(latency) || 0,
-        downlink: downlinkMbps,
-        uplink: uplinkMbps,
-        downlinkFormatted: `${downlink} ${downlinkUnit}`,
-        uplinkFormatted: `${uplink} ${uplinkUnit}`,
-        jitter,
-        reliability: Number(reliability) || 0,
-        mobility,
-        density: Number(density) || 0,
-      };
-
-      try {
-        setAnalysisProgress(35);
-        setAnalysisPhase('Connecting to Pot SlicerAPI (/v1/generate)...');
-
-        const backendPromise = generateSliceRecommendation({
-          mode: 'key-value',
-          promptText: '',
-          specs,
-          candidateRecommendation: computedRecommendation,
-        });
-
-        await new Promise((r) => setTimeout(r, 400));
-        setAnalysisProgress(60);
-        setAnalysisPhase('Evaluating 3GPP Rel-18 5QI delay budgets & radio resource multiplexing...');
-
-        await new Promise((r) => setTimeout(r, 450));
-        setAnalysisProgress(85);
-        setAnalysisPhase('Synthesizing explainable telecom justification & counterfactual sensitivity...');
-
-        const [resolvedResult] = await Promise.all([
-          backendPromise,
-          new Promise((r) => setTimeout(r, 400)),
-        ]);
-
-        if (resolvedResult.source === 'backend') {
-          setBackendStatus({ online: true, checked: true });
-        }
-
-        setAnalysisProgress(100);
-        setAnalysisPhase('Optimization complete.');
-        setAnalysisResult(resolvedResult);
-        setAnalysisState('done');
-      } catch {
-        setAnalysisProgress(100);
-        setAnalysisResult(computedRecommendation);
-        setAnalysisState('done');
-      }
     }
-  }, [inputMode, promptText, latency, downlink, downlinkUnit, downlinkMbps, uplink, uplinkUnit, uplinkMbps, jitter, reliability, mobility, density, computedRecommendation]);
+
+    const candidate = isPrompt
+      ? generatePromptRecommendation(specs)
+      : computedRecommendation;
+
+    try {
+      const resolvedResult = await generateSliceRecommendation({
+        mode: inputMode,
+        promptText: isPrompt ? promptText : '',
+        specs,
+        candidateRecommendation: candidate,
+        presetName: selectedPreset,
+        onProgress: (evt) => {
+          if (evt.message) setAnalysisPhase(evt.message);
+          if (evt.status === 'started' || evt.status === 'queued') setAnalysisProgress(20);
+          else if (evt.status === 'intake') setAnalysisProgress(40);
+          else if (evt.status === 'analysis') setAnalysisProgress(65);
+          else if (evt.status === 'reasoning') setAnalysisProgress(85);
+          else if (evt.status === 'audit') setAnalysisProgress(95);
+          else if (evt.status === 'completed') setAnalysisProgress(100);
+        },
+      });
+
+      setAnalysisProgress(100);
+      setAnalysisPhase('Optimization complete.');
+      setAnalysisResult(resolvedResult);
+      setAnalysisState('done');
+    } catch {
+      setAnalysisProgress(100);
+      setAnalysisResult(candidate);
+      setAnalysisState('done');
+    }
+  }, [inputMode, promptText, latency, downlink, downlinkUnit, downlinkMbps, uplink, uplinkUnit, uplinkMbps, jitter, reliability, mobility, density, computedRecommendation, selectedPreset]);
 
   const activeResult = analysisResult || computedRecommendation;
 
   // Unified Export Configuration (JSON specification)
   const exportConfig = useCallback(() => {
     const isPrompt = inputMode === 'prompt';
+    const specs = isPrompt
+      ? (extractedSpecs || extractSpecsFromPrompt(promptText))
+      : {
+          latency: Number(latency) || 0,
+          downlink: downlinkMbps,
+          uplink: uplinkMbps,
+          downlinkFormatted: `${downlink} ${downlinkUnit}`,
+          uplinkFormatted: `${uplink} ${uplinkUnit}`,
+          jitter,
+          reliability: Number(reliability) || 0,
+          mobility,
+          density: Number(density) || 0,
+        };
+
+    const requestPayload = buildGenerateRequest({
+      mode: inputMode,
+      promptText: isPrompt ? promptText : '',
+      specs,
+      presetName: selectedPreset,
+    });
+
     const config = {
-      mode: isPrompt ? 'prompt-specification' : 'key-value-specification',
       timestamp: new Date().toISOString(),
-      ...(isPrompt
+      mode: isPrompt ? 'prompt-specification' : 'key-value-specification',
+      inputSummary: isPrompt
         ? {
             prompt: promptText,
             extractedRequirements: {
-              latencyMs: extractedSpecs?.latency,
-              downlinkMbps: extractedSpecs?.downlink,
-              uplinkMbps: extractedSpecs?.uplink,
-              reliabilityPercentage: extractedSpecs?.reliability,
-              mobilityTier: extractedSpecs?.mobility,
-              deviceDensityPerKm2: extractedSpecs?.density,
+              latencyMs: specs.latency,
+              downlinkMbps: specs.downlink,
+              uplinkMbps: specs.uplink,
+              reliabilityPercentage: specs.reliability,
+              mobilityTier: specs.mobility,
+              deviceDensityPerKm2: specs.density,
             },
           }
         : {
@@ -636,7 +649,14 @@ export default function NetworkSliceRecommender() {
               mobilityTier: mobility,
               deviceDensityPerKm2: Number(density) || 0,
             },
-          }),
+          },
+      backendContract: {
+        endpoint: activeResult?.source === 'backend' ? '/api/v1/generate' : null,
+        source: activeResult?.source || 'local',
+        decisionId: activeResult?.decisionId || null,
+        weightsVersion: activeResult?.weightsVersion || null,
+        generateRequest: requestPayload,
+      },
       aiRecommendation: {
         sliceCategory: activeResult?.sliceName,
         sst: activeResult?.sst,
@@ -651,44 +671,14 @@ export default function NetworkSliceRecommender() {
         justification: activeResult?.summary,
         keyDrivers: activeResult?.reasons,
         counterFactuals: activeResult?.counterFactuals,
-        analysisSource: activeResult?.sourceBadge || 'SlicerAPI Engine',
-      },
-      backendContract: {
-        endpoint: '/v1/generate/',
-        model: 'GenerateResponse',
-        natural_query: isPrompt
-          ? promptText
-          : `Requirements: Latency ${latency}ms, DL ${downlinkMbps}Mbps, UL ${uplinkMbps}Mbps, Reliability ${reliability}%, Mobility ${mobility}, Density ${density}/km²`,
-        parameteric_query: isPrompt
-          ? {
-              latency: extractedSpecs?.latency,
-              downlink: extractedSpecs?.downlink,
-              uplink: extractedSpecs?.uplink,
-              reliability: extractedSpecs?.reliability,
-              mobility: extractedSpecs?.mobility,
-              density: extractedSpecs?.density,
-            }
-          : {
-              latency: Number(latency) || 0,
-              downlink: downlinkMbps,
-              uplink: uplinkMbps,
-              jitter,
-              reliability: Number(reliability) || 0,
-              mobility,
-              density: Number(density) || 0,
-            },
-        sst: String(activeResult?.sst || '1'),
-        sd: activeResult?.sd || '0x000001',
-        justification: activeResult?.summary || '',
-        counter_factuals: activeResult?.counterFactuals || '',
-        deployment_architecture: activeResult?.edgeStrategy || '',
+        analysisSource: activeResult?.sourceBadge || 'AI Decision Engine',
       },
     };
 
     navigator.clipboard?.writeText(JSON.stringify(config, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
-  }, [inputMode, promptText, extractedSpecs, latency, downlink, downlinkUnit, downlinkMbps, uplink, uplinkUnit, uplinkMbps, jitter, reliability, mobility, density, activeResult]);
+  }, [inputMode, promptText, extractedSpecs, latency, downlink, downlinkUnit, downlinkMbps, uplink, uplinkUnit, uplinkMbps, jitter, reliability, mobility, density, activeResult, selectedPreset]);
 
   // Populate Key-Value Stepper from Prompt Specs
   const applyPromptToKeyValue = useCallback(() => {
@@ -755,17 +745,6 @@ export default function NetworkSliceRecommender() {
             <span className="mode-tab-badge">Step-by-Step</span>
           </button>
         </div>
-        <div
-          className={`backend-status-pill ${backendStatus.online ? 'backend-status-pill--online' : 'backend-status-pill--simulated'}`}
-          title="Pot SlicerAPI backend status (/v1/generate/)"
-        >
-          <HugeiconsIcon icon={CloudServerIcon} size={13} strokeWidth={2.2} />
-          <span className="status-indicator-dot"></span>
-          <span className="status-label">
-            {backendStatus.online ? 'Pot SlicerAPI' : 'SlicerAPI (Local)'}
-          </span>
-          <span className="status-endpoint">/v1/generate</span>
-        </div>
       </div>
 
       {inputMode === 'prompt' ? (
@@ -775,9 +754,26 @@ export default function NetworkSliceRecommender() {
             <div className="prompt-card">
               <h3 className="prompt-card-title">Describe Your Network Workload</h3>
               <p className="prompt-card-desc">
-                Specify your application requirements, deployment environment, and latency goals in plain English.
                 The AI engine evaluates your prompt directly, extracts 3GPP QoS parameters, and allocates the optimal slice.
               </p>
+
+              <div className="preset-selector-strip">
+                <span className="preset-strip-label">3GPP Workload Presets:</span>
+                <div className="preset-chip-list">
+                  {WORKLOAD_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`preset-chip-btn ${selectedPreset === preset.id ? 'preset-chip-btn--active' : ''}`}
+                      onClick={() => applyPreset(preset)}
+                      title={preset.description}
+                    >
+                      <span className="preset-category-tag">{preset.category}</span>
+                      <span className="preset-label-text">{preset.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="form-group">
                 <div className="prompt-label-row">
@@ -858,8 +854,16 @@ export default function NetworkSliceRecommender() {
               <div className="rec-top-actions">
                 <div className="ai-verified-tag">
                   <HugeiconsIcon icon={Tick02Icon} size={15} strokeWidth={2.4} />
-                  <span>{activeResult.sourceBadge || 'Analysis Returned by SlicerAPI Engine'}</span>
+                  <span>{activeResult.sourceBadge || 'Analysis Returned by AI Engine'}</span>
                 </div>
+                {activeResult.decisionId && (
+                  <div className="audit-provenance-bar">
+                    <span className="audit-provenance-tag">Audit ID: {activeResult.decisionId.slice(0, 10)}...</span>
+                    {activeResult.weightsVersion && (
+                      <span className="audit-weights-tag">Weights: v{activeResult.weightsVersion}</span>
+                    )}
+                  </div>
+                )}
                 <div className="rec-action-buttons">
                   <button
                     type="button"
@@ -957,7 +961,9 @@ export default function NetworkSliceRecommender() {
 
               {activeResult.rawResponse && (
                 <details className="backend-trace-details">
-                  <summary className="backend-trace-summary">Inspect SlicerAPI Contract Schema (pot: /v1/generate/)</summary>
+                  <summary className="backend-trace-summary">
+                    Inspect Backend AI Engine Trace & Decision Provenance ({activeResult.source === 'backend' ? 'pot: /api/v1/generate' : 'Local Deterministic Matrix'})
+                  </summary>
                   <pre className="backend-trace-json">{activeResult.rawResponse}</pre>
                 </details>
               )}
@@ -1000,6 +1006,24 @@ export default function NetworkSliceRecommender() {
                 <span className="step-badge">Step 1</span>
                 <h3>Latency & Throughput Requirements</h3>
                 <p>Define the strict end-to-end timing and bandwidth demands of your data flows.</p>
+              </div>
+
+              <div className="preset-selector-strip">
+                <span className="preset-strip-label">3GPP Workload Presets:</span>
+                <div className="preset-chip-list">
+                  {WORKLOAD_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`preset-chip-btn ${selectedPreset === preset.id ? 'preset-chip-btn--active' : ''}`}
+                      onClick={() => applyPreset(preset)}
+                      title={preset.description}
+                    >
+                      <span className="preset-category-tag">{preset.category}</span>
+                      <span className="preset-label-text">{preset.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="form-group">
@@ -1266,8 +1290,16 @@ export default function NetworkSliceRecommender() {
                   <div className="rec-top-actions">
                     <div className="ai-verified-tag">
                       <HugeiconsIcon icon={Tick02Icon} size={15} strokeWidth={2.4} />
-                      <span>{activeResult.sourceBadge || 'Analysis Returned by SlicerAPI Engine'}</span>
+                      <span>{activeResult.sourceBadge || 'Analysis Returned by AI Engine'}</span>
                     </div>
+                    {activeResult.decisionId && (
+                      <div className="audit-provenance-bar">
+                        <span className="audit-provenance-tag">Audit ID: {activeResult.decisionId.slice(0, 10)}...</span>
+                        {activeResult.weightsVersion && (
+                          <span className="audit-weights-tag">Weights: v{activeResult.weightsVersion}</span>
+                        )}
+                      </div>
+                    )}
                     <button type="button" className="re-analyze-btn" onClick={triggerAnalysis}>
                       ↻ Re-run Analysis
                     </button>
@@ -1333,7 +1365,9 @@ export default function NetworkSliceRecommender() {
 
                   {activeResult.rawResponse && (
                     <details className="backend-trace-details">
-                      <summary className="backend-trace-summary">Inspect SlicerAPI Contract Schema (pot: /v1/generate/)</summary>
+                      <summary className="backend-trace-summary">
+                        Inspect Backend AI Engine Trace & Decision Provenance ({activeResult.source === 'backend' ? 'pot: /api/v1/generate' : 'Local Deterministic Matrix'})
+                      </summary>
                       <pre className="backend-trace-json">{activeResult.rawResponse}</pre>
                     </details>
                   )}

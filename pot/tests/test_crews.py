@@ -42,10 +42,10 @@ def test_llm_factory_uses_cirrascale_and_role_model(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("CIRRASCALE_API_KEY", "test-key")
     llm_module.model_config.cache_clear()
     llm_module.build_llm("intake_normaliser")
-    assert captured["model"] == "openai/Qwen/Qwen3-8B"
+    assert captured["model"] == "openai/Llama-3.1-8B"
     assert captured["base_url"] == "https://aisuite.cirrascale.com/apis/v2"
     assert captured["api_key"] == "test-key"
-    assert captured["additional_params"] == {"enable_thinking": False}
+    assert captured["additional_params"] == {}
 
 
 def test_model_factory_requires_provider_secret(monkeypatch: pytest.MonkeyPatch) -> None:

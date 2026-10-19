@@ -1,6 +1,15 @@
 """Append-only, idempotent JSONL persistence for completed decisions."""
 
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore
+
+try:
+    import portalocker
+except ImportError:
+    portalocker = None  # type: ignore
+
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -54,7 +63,11 @@ class JsonlAuditWriter:
         """Append the record atomically, or return the existing identical decision."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a+", encoding="utf-8") as stream:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            if fcntl is not None:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            elif portalocker is not None:
+                portalocker.lock(stream, portalocker.LOCK_EX)
+
             stream.seek(0)
             for line in stream:
                 existing = json.loads(line)

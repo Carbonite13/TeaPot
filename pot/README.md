@@ -14,7 +14,7 @@ poetry run uvicorn duk.main:app --reload --env-file .env
 The API reference is at `http://localhost:8000/docs`. To start the React client, use another terminal:
 
 ```bash
-cd frontend
+cd ../tea
 npm install
 npm run dev
 ```

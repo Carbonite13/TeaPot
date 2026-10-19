@@ -1,21 +1,15 @@
 /**
  * slicerApi.js
  * 
- * Integration layer connecting the Tea (React/Vite frontend) with the Pot (FastAPI backend).
+ * Frontend communication service connecting the Tea (React/Vite frontend)
+ * with the Pot (FastAPI / CrewAI DUK Multi-Agent backend).
  * 
- * Backend Contract:
- * - Router prefix: /v1/generate (pot/src/SlicerAPI/main.py)
- * - Route endpoint: /v1/generate/ (pot/src/SlicerAPI/api/v1/routes/generate.py)
- * - Schema: GenerateResponse (pot/src/SlicerAPI/models/generate.py)
- *   Fields:
- *     - natural_query: string
- *     - parameteric_query: object
- *     - raw_response: string
- *     - justification: string
- *     - counter_factuals: string
- *     - sst: string ("1" | "2" | "3" | "4")
- *     - sd: string ("0x000001", etc.)
- *     - deployment_architecture: string
+ * Architecture:
+ * - POST /api/v1/generate: Submits GenerateRequest payload (preset_name, requirements, description).
+ * - GET  /api/v1/generate/:jobId: Polls asynchronous job progress and retrieves final DecisionResult.
+ * - GET  /api/v1/generate/:jobId/events: Server-Sent Events (SSE) stream for real-time progress.
+ * - GET  /api/v1/presets: Discovers validated 3GPP workload profiles.
+ * - Offline Fallback: Embedded deterministic 3GPP Release-18 slice mapping when server is unreachable.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -68,7 +62,16 @@ export const SST_INFO = {
 };
 
 /**
- * Normalizes SST identifier into a numeric SST and metadata
+ * Validated presets present in the backend catalog (pot/data/presets/).
+ */
+export const KNOWN_BACKEND_PRESETS = new Set([
+  'ambulance_telemetry',
+  'campus_vr',
+  'smart_parking',
+]);
+
+/**
+ * Normalizes SST identifier into a numeric SST
  */
 export function normalizeSst(sstInput) {
   if (!sstInput) return 1;
@@ -80,15 +83,110 @@ export function normalizeSst(sstInput) {
 }
 
 /**
- * Checks if the Pot SlicerAPI backend is reachable
+ * Map category name to SST number
+ */
+export function categoryToSst(category) {
+  if (!category) return 1;
+  const cat = String(category).trim().toUpperCase();
+  if (cat === 'URLLC') return 2;
+  if (cat === 'MMTC') return 3;
+  if (cat === 'V2X') return 4;
+  return 1;
+}
+
+/**
+ * Maps frontend mobility label to DUK schema mobility enum:
+ * 'stationary' | 'pedestrian' | 'vehicular' | 'high_speed'
+ */
+export function mapMobilityToDuk(mobility) {
+  if (!mobility) return 'stationary';
+  const lower = String(mobility).toLowerCase();
+  if (lower.includes('high') || lower.includes('>120') || lower.includes('>200')) return 'high_speed';
+  if (lower.includes('vehic') || lower.includes('car') || lower.includes('uav') || lower.includes('drone')) return 'vehicular';
+  if (lower.includes('pedestrian') || lower.includes('walk') || lower.includes('<10')) return 'pedestrian';
+  return 'stationary';
+}
+
+/**
+ * Maps frontend criticality & reliability to DUK criticality enum:
+ * 'routine' | 'important' | 'life_safety'
+ */
+export function mapCriticalityToDuk(criticality, reliability) {
+  if (criticality === 'life_safety') return 'life_safety';
+  if (criticality === 'important') return 'important';
+  if (criticality === 'routine') return 'routine';
+  const rel = Number(reliability) || 99.0;
+  if (rel >= 99.999) return 'life_safety';
+  if (rel >= 99.0) return 'important';
+  return 'routine';
+}
+
+/**
+ * Constructs the canonical GenerateRequest payload conforming strictly
+ * to the backend Pydantic schema (duk.schemas.api.GenerateRequest).
+ */
+export function buildGenerateRequest({
+  mode,
+  promptText = '',
+  specs = {},
+  presetName = null,
+}) {
+  const validPreset = presetName && KNOWN_BACKEND_PRESETS.has(presetName) ? presetName : undefined;
+  const reliabilityNum = Number(specs.reliability) || 99.0;
+  // Convert reliability percentage into Packet Error Rate (PER), bounded [1e-9, 1e-1]
+  const reliabilityPer = Math.max(1e-9, Math.min(1e-1, (100 - reliabilityNum) / 100));
+
+  const mobility = mapMobilityToDuk(specs.mobility);
+  const criticality = mapCriticalityToDuk(specs.criticality, reliabilityNum);
+
+  // Derive guaranteed bit rate requirement
+  const throughputGuaranteed = Boolean(
+    specs.guaranteedThroughput ?? (reliabilityNum > 99.0 || mobility === 'vehicular' || mobility === 'high_speed')
+  );
+
+  // Derive ARP level (1 = highest priority life-safety, 15 = lowest priority best-effort)
+  const arpLevel = Math.max(
+    1,
+    Math.min(
+      15,
+      Number(specs.arpLevel) || (criticality === 'life_safety' ? 1 : (reliabilityNum > 99.9 ? 3 : 8))
+    )
+  );
+
+  const requirements = {
+    latency_ms: Math.max(0.1, Math.min(1000, Number(specs.latency) || 10)),
+    throughput_mbps: Math.max(0.001, Math.min(10000, Number(specs.downlink) || 100)),
+    throughput_guaranteed: throughputGuaranteed,
+    reliability_per: reliabilityPer,
+    mobility,
+    device_density_per_km2: Math.max(1, Math.min(1e6, Number(specs.density) || 500)),
+    arp_level: arpLevel,
+    criticality,
+  };
+
+  const payload = {
+    requirements,
+  };
+
+  if (validPreset) {
+    payload.preset_name = validPreset;
+  }
+
+  if (mode === 'prompt' && promptText?.trim()) {
+    payload.description = promptText.trim();
+  }
+
+  return payload;
+}
+
+/**
+ * Checks if the backend DUK engine is reachable.
  */
 export async function checkBackendStatus() {
-  const url = `${API_BASE}/v1/generate/`;
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-    const res = await fetch(url, {
+    const res = await fetch(`${API_BASE}/api/v1/presets`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
@@ -96,63 +194,134 @@ export async function checkBackendStatus() {
     clearTimeout(timeoutId);
 
     if (res.ok) {
-      return { online: true, url };
+      const presets = await res.json();
+      return {
+        online: true,
+        type: 'duk',
+        url: `${API_BASE}/api/v1`,
+        presets: Array.isArray(presets) ? presets : [],
+      };
     }
-    return { online: false, url, status: res.status };
   } catch {
-    return { online: false, url };
+    // Offline
   }
+
+  return { online: false, type: 'offline', url: `${API_BASE}/api/v1`, presets: [] };
 }
 
 /**
- * Submits requirements to the Pot SlicerAPI backend (/v1/generate/)
- * and merges the result with the comprehensive 3GPP slice profile.
+ * Fetches available presets from the DUK backend (/api/v1/presets).
+ */
+export async function fetchBackendPresets() {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/presets`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.debug('Failed to fetch backend presets:', err?.message || err);
+  }
+  return null;
+}
+
+/**
+ * Polls DUK decision job status until completed or failed.
+ */
+async function pollDukJob(jobId, onProgress, maxAttempts = 120, intervalMs = 1000) {
+  const statusUrl = `${API_BASE}/api/v1/generate/${jobId}`;
+  let lastSequence = 0;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+    try {
+      const res = await fetch(statusUrl, {
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json();
+
+      // Emit new progress events to listener
+      if (Array.isArray(data.progress)) {
+        for (const evt of data.progress) {
+          if (evt.sequence > lastSequence) {
+            lastSequence = evt.sequence;
+            if (typeof onProgress === 'function') {
+              onProgress({
+                sequence: evt.sequence,
+                status: evt.status,
+                message: evt.message,
+                timestamp: evt.timestamp,
+              });
+            }
+          }
+        }
+      }
+
+      if (data.status === 'completed' && data.result) {
+        return data.result;
+      }
+
+      if (data.status === 'failed') {
+        throw new Error(data.error?.message || 'DUK decision job failed.');
+      }
+    } catch (err) {
+      if (err.message?.includes('failed')) throw err;
+      // Network blip, retry next iteration
+    }
+  }
+
+  throw new Error('DUK decision job timed out waiting for completion.');
+}
+
+/**
+ * Formats counterfactual objects returned by DUK into descriptive insights.
+ */
+function formatCounterfactuals(cfList, recommendedSlice) {
+  if (!Array.isArray(cfList) || cfList.length === 0) return '';
+
+  return cfList
+    .map((cf) => {
+      const changesText = Object.entries(cf.changes || {})
+        .map(([k, v]) => `${k} -> ${typeof v === 'number' ? Number(v.toFixed(3)) : v}`)
+        .join(', ');
+      return `If ${changesText}, winning slice flips from ${cf.from_category || recommendedSlice} to ${cf.to_category}${cf.verified ? ' [verified]' : ''}.`;
+    })
+    .join(' ');
+}
+
+/**
+ * Submits requirements to the DUK Multi-Agent Flow (/api/v1/generate),
+ * monitors execution progress, and transforms the DecisionResult into the frontend model.
+ * If the backend is offline, falls back seamlessly to the client-side 3GPP Rel-18 engine.
  */
 export async function generateSliceRecommendation({
   mode,
   promptText,
   specs,
   candidateRecommendation,
+  presetName,
+  onProgress,
 }) {
   const candidateSst = normalizeSst(candidateRecommendation?.sst || specs?.sst || 1);
   const info = SST_INFO[candidateSst] || SST_INFO[1];
 
-  // Prepare payload exactly matching pot/src/SlicerAPI/models/generate.py: GenerateResponse
-  const payload = {
-    natural_query: mode === 'prompt' ? promptText : `Requirements: Latency ${specs.latency}ms, DL ${specs.downlink}Mbps, UL ${specs.uplink}Mbps, Reliability ${specs.reliability}%, Mobility ${specs.mobility}, Density ${specs.density}/km²`,
-    // Both spellings supplied for resilience:
-    parameteric_query: {
-      latency: specs.latency,
-      downlink: specs.downlink,
-      uplink: specs.uplink,
-      reliability: specs.reliability,
-      mobility: specs.mobility,
-      density: specs.density,
-      jitter: specs.jitter || 'Standard',
-      mode,
-    },
-    parametric_query: {
-      latency: specs.latency,
-      downlink: specs.downlink,
-      uplink: specs.uplink,
-      reliability: specs.reliability,
-      mobility: specs.mobility,
-      density: specs.density,
-      jitter: specs.jitter || 'Standard',
-      mode,
-    },
-    sst: String(candidateSst),
-    sd: candidateRecommendation?.sd || info.defaultSd,
-    justification: candidateRecommendation?.summary || '',
-    counter_factuals: candidateRecommendation?.counterFactuals || info.defaultCounterFactual,
-    deployment_architecture: candidateRecommendation?.edgeStrategy || info.defaultEdgeStrategy,
-    raw_response: '',
-  };
+  const payload = buildGenerateRequest({
+    mode,
+    promptText,
+    specs,
+    presetName,
+  });
 
-  const endpoint = `${API_BASE}/v1/generate/`;
-
+  // =========================================================================
+  // 1. DUK MULTI-AGENT ASYNC FLOW (POST /api/v1/generate)
+  // =========================================================================
   try {
-    const response = await fetch(endpoint, {
+    const res = await fetch(`${API_BASE}/api/v1/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -161,40 +330,67 @@ export async function generateSliceRecommendation({
       body: JSON.stringify(payload),
     });
 
-    if (response.ok) {
-      const data = await response.json();
-      const resolvedSst = data.sst ? normalizeSst(data.sst) : candidateSst;
+    if (res.status === 202) {
+      const accepted = await res.json();
+      if (typeof onProgress === 'function') {
+        onProgress({ status: 'queued', message: 'Job accepted by DUK engine...' });
+      }
+
+      // Poll until completion
+      const result = await pollDukJob(accepted.job_id, onProgress);
+
+      const resolvedSst = categoryToSst(result.recommended_slice);
       const resolvedInfo = SST_INFO[resolvedSst] || info;
+      const probMap = result.probabilities || {};
+      const winningProb = probMap[result.recommended_slice] || 0.95;
+      const confidencePct = Math.round(winningProb * 100);
+
+      const formattedCf = formatCounterfactuals(result.counterfactuals, result.recommended_slice) || resolvedInfo.defaultCounterFactual;
+
+      const reasons = Object.entries(probMap).map(([category, prob]) => {
+        const score = result.scores?.[category];
+        const scoreText = typeof score === 'number' ? ` (fit score: ${score.toFixed(3)})` : '';
+        return `${category}: ${(prob * 100).toFixed(1)}% probability${scoreText}`;
+      });
 
       return {
         success: true,
         source: 'backend',
-        sourceBadge: 'Verified by SlicerAPI Backend (/v1/generate)',
-        sliceName: resolvedInfo.sliceName,
+        backendType: 'duk',
+        sourceBadge: result.reasoning_verified
+          ? 'DUK Multi-Agent AI Core (Trace-Verified)'
+          : 'DUK Decision Engine',
+        sliceName: result.recommended_slice || resolvedInfo.sliceName,
         sst: resolvedSst,
-        sd: data.sd || candidateRecommendation?.sd || resolvedInfo.defaultSd,
-        confidence: candidateRecommendation?.confidence || 95,
-        fiveQi: candidateRecommendation?.fiveQi || resolvedInfo.fiveQi,
-        delayBudget: candidateRecommendation?.delayBudget || `${specs.latency} ms`,
-        per: candidateRecommendation?.per || resolvedInfo.per,
+        sd: resolvedInfo.defaultSd,
+        confidence: confidencePct,
+        fiveQi: resolvedInfo.fiveQi,
+        delayBudget: `${result.normalized_requirements?.latency_ms?.value ?? specs.latency} ms`,
+        per: result.normalized_requirements?.reliability_per?.value
+          ? `10⁻${Math.round(-Math.log10(result.normalized_requirements.reliability_per.value))}`
+          : resolvedInfo.per,
         headline: resolvedInfo.headline,
-        summary: data.justification?.trim() || candidateRecommendation?.summary || '',
-        reasons: candidateRecommendation?.reasons || [],
-        edgeStrategy: data.deployment_architecture?.trim() || candidateRecommendation?.edgeStrategy || resolvedInfo.defaultEdgeStrategy,
-        counterFactuals: data.counter_factuals?.trim() || candidateRecommendation?.counterFactuals || resolvedInfo.defaultCounterFactual,
-        rawResponse: data.raw_response || JSON.stringify(data, null, 2),
+        summary: result.reasoning?.trim() || candidateRecommendation?.summary || resolvedInfo.headline,
+        reasons: reasons.length > 0 ? reasons : candidateRecommendation?.reasons || [],
+        edgeStrategy: resolvedInfo.defaultEdgeStrategy,
+        counterFactuals: formattedCf,
+        rawResponse: JSON.stringify(result, null, 2),
+        decisionId: result.decision_id,
+        weightsVersion: result.weights_version,
       };
     }
   } catch (err) {
-    // If backend is not running or proxy not active, fallback seamlessly
-    console.warn('SlicerAPI backend call fallback to local engine:', err?.message || err);
+    console.debug('DUK backend flow unavailable or offline:', err?.message || err);
   }
 
-  // Graceful fallback to local model simulation
+  // =========================================================================
+  // 2. SEAMLESS FALLBACK: DETERMINISTIC CLIENT-SIDE 3GPP RELEASE-18 CALCULATION
+  // =========================================================================
   return {
     success: false,
     source: 'local',
-    sourceBadge: 'Synthesized by SlicerAPI Local Engine',
+    backendType: 'offline',
+    sourceBadge: 'Analysis Returned by Local 3GPP Matrix',
     sliceName: candidateRecommendation?.sliceName || info.sliceName,
     sst: candidateSst,
     sd: candidateRecommendation?.sd || info.defaultSd,
@@ -207,6 +403,14 @@ export async function generateSliceRecommendation({
     reasons: candidateRecommendation?.reasons || [],
     edgeStrategy: candidateRecommendation?.edgeStrategy || info.defaultEdgeStrategy,
     counterFactuals: candidateRecommendation?.counterFactuals || info.defaultCounterFactual,
-    rawResponse: JSON.stringify(payload, null, 2),
+    rawResponse: JSON.stringify(
+      {
+        request: payload,
+        status: 'offline_fallback',
+        note: 'Backend service offline. Result calculated deterministically from 3GPP Release-18 specification matrix.',
+      },
+      null,
+      2
+    ),
   };
 }
