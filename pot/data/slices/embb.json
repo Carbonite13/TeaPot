@@ -1,0 +1,15 @@
+{
+  "category": "eMBB",
+  "display_name": "Enhanced Mobile Broadband",
+  "profile_version": "1.0.0",
+  "targets": {
+    "latency_ms": 50.0,
+    "throughput_mbps": 100.0,
+    "reliability_per": 0.00001,
+    "mobility": ["stationary", "pedestrian", "vehicular"],
+    "device_density_per_km2": 10000,
+    "guaranteed_throughput": false,
+    "criticality": ["routine", "important"]
+  },
+  "source": "Simulation profile; values are engineering assumptions and are not asserted as standardized requirements."
+}

@@ -1,0 +1,7 @@
+apply_preset_and_normalise:
+  description: >
+    Classify qualitative phrases from the supplied application description.
+    Return only the qualitative hints allowed by the output schema. Do not
+    calculate or infer numeric measurements. Free text: {free_text}
+  expected_output: A structured set of qualitative hints and a short evidence phrase.
+  agent: requirement_normaliser

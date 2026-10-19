@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "temperature": 0.35,
+  "weights": {
+    "latency": 0.15,
+    "throughput": 0.2,
+    "reliability": 0.15,
+    "mobility": 0.1,
+    "device_density": 0.3,
+    "priority": 0.1
+  },
+  "metadata": {
+    "requirements_mapping": {
+      "latency": "3GPP TS 23.501 §5.7.4 (to verify against current release)",
+      "throughput": "3GPP TS 23.501 §5.7.2 (to verify against current release)",
+      "reliability": "3GPP TS 23.501 §5.7.4 (to verify against current release)",
+      "mobility": "ITU-R M.2410 (to verify against current release)",
+      "device_density": "ITU-R M.2410 (to verify against current release)",
+      "priority": "3GPP TS 23.501 §5.7.2.2 (to verify against current release)"
+    },
+    "method_parameters": "Weights and temperature are application design parameters; the standards define no category-scoring weights. Catalog targets are illustrative simulation assumptions, not standardized thresholds."
+  }
+}

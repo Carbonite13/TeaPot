@@ -1,0 +1,178 @@
+{
+  "_note": "Synthetic data. Fictional provider and test PLMN 999-70. Not real operator values.",
+  "provider": {
+    "name": "Example NSP",
+    "plmn": { "mcc": "999", "mnc": "70" },
+    "apiBase": "https://api.example-nsp.test/tmf-api"
+  },
+  "customer": {
+    "id": "CUST-1001",
+    "name": "Acme Manufacturing",
+    "agreementId": "AGR-2026-0042",
+    "status": "approved",
+    "approvedOn": "2026-10-19",
+    "sites": [
+      { "id": "SITE-PLANT1", "name": "Plant 1", "trackingAreas": ["TA-101", "TA-102"] },
+      { "id": "SITE-WH1", "name": "Warehouse 1", "trackingAreas": ["TA-201"] }
+    ]
+  },
+
+  "serviceInventory": {
+    "endpoint": "GET /serviceInventory/v4/service?relatedParty.id=CUST-1001",
+    "response": [
+      {
+        "id": "slice-001",
+        "name": "Acme Enterprise Broadband",
+        "state": "active",
+        "serviceSpecification": { "id": "spec-embb-ent", "name": "NetworkSlice-eMBB" },
+        "relatedParty": [{ "id": "CUST-1001", "role": "customer" }],
+        "serviceCharacteristic": [
+          { "name": "snssai", "valueType": "object", "value": { "sst": 1, "sd": "0000A1" } },
+          { "name": "sliceType", "value": "eMBB" },
+          { "name": "dnn", "value": "acme-corp" },
+          { "name": "ipPool", "value": "10.60.0.0/16" },
+          { "name": "dlThroughputMbps", "value": 300 },
+          { "name": "ulThroughputMbps", "value": 100 },
+          { "name": "sessionAmbrDlMbps", "value": 50 },
+          { "name": "sessionAmbrUlMbps", "value": 20 },
+          { "name": "fiveQi", "value": [9, 6] },
+          { "name": "latencyMs", "value": 30 },
+          { "name": "packetErrorRate", "value": 0.001 },
+          { "name": "availability", "value": 99.9 },
+          { "name": "isolation", "value": "dedicated-upf" },
+          { "name": "maxUEs", "value": 500 },
+          { "name": "mobilityLevel", "value": "full" },
+          { "name": "areaOfService", "value": ["TA-101", "TA-102", "TA-201"] },
+          { "name": "pricePerMonthINR", "value": 150000 }
+        ]
+      },
+      {
+        "id": "slice-002",
+        "name": "Acme Industrial Control",
+        "state": "active",
+        "serviceSpecification": { "id": "spec-urllc-ind", "name": "NetworkSlice-URLLC" },
+        "relatedParty": [{ "id": "CUST-1001", "role": "customer" }],
+        "serviceCharacteristic": [
+          { "name": "snssai", "valueType": "object", "value": { "sst": 2, "sd": "000010" } },
+          { "name": "sliceType", "value": "URLLC" },
+          { "name": "dnn", "value": "acme-ctrl" },
+          { "name": "ipPool", "value": "10.61.0.0/24" },
+          { "name": "dlThroughputMbps", "value": 20 },
+          { "name": "ulThroughputMbps", "value": 20 },
+          { "name": "fiveQi", "value": [82, 83] },
+          { "name": "latencyMs", "value": 10 },
+          { "name": "packetErrorRate", "value": 0.00001 },
+          { "name": "availability", "value": 99.99 },
+          { "name": "isolation", "value": "dedicated-upf-smf" },
+          { "name": "maxUEs", "value": 100 },
+          { "name": "mobilityLevel", "value": "stationary-or-nomadic" },
+          { "name": "areaOfService", "value": ["TA-101"] },
+          { "name": "pricePerMonthINR", "value": 400000 }
+        ]
+      },
+      {
+        "id": "slice-003",
+        "name": "Acme Sensor Network",
+        "state": "active",
+        "serviceSpecification": { "id": "spec-miot", "name": "NetworkSlice-MIoT" },
+        "relatedParty": [{ "id": "CUST-1001", "role": "customer" }],
+        "serviceCharacteristic": [
+          { "name": "snssai", "valueType": "object", "value": { "sst": 3, "sd": "000020" } },
+          { "name": "sliceType", "value": "MIoT" },
+          { "name": "dnn", "value": "acme-iot" },
+          { "name": "ipPool", "value": "10.62.0.0/22" },
+          { "name": "dlThroughputMbps", "value": 5 },
+          { "name": "ulThroughputMbps", "value": 5 },
+          { "name": "fiveQi", "value": [9] },
+          { "name": "latencyMs", "value": 500 },
+          { "name": "packetErrorRate", "value": 0.01 },
+          { "name": "availability", "value": 99.5 },
+          { "name": "isolation", "value": "shared" },
+          { "name": "maxUEs", "value": 5000 },
+          { "name": "mobilityLevel", "value": "stationary" },
+          { "name": "areaOfService", "value": ["TA-101", "TA-102", "TA-201"] },
+          { "name": "pricePerMonthINR", "value": 40000 }
+        ]
+      }
+    ]
+  },
+
+  "nssai": {
+    "configuredNssai": [
+      { "sst": 1, "sd": "0000A1" },
+      { "sst": 2, "sd": "000010" },
+      { "sst": 3, "sd": "000020" }
+    ],
+    "allowedNssaiByTrackingArea": {
+      "TA-101": [
+        { "sst": 1, "sd": "0000A1" },
+        { "sst": 2, "sd": "000010" },
+        { "sst": 3, "sd": "000020" }
+      ],
+      "TA-102": [
+        { "sst": 1, "sd": "0000A1" },
+        { "sst": 3, "sd": "000020" }
+      ],
+      "TA-201": [
+        { "sst": 1, "sd": "0000A1" },
+        { "sst": 3, "sd": "000020" }
+      ]
+    },
+    "rejectedNssai": [
+      { "cause": "NOT_AVAILABLE_IN_CURRENT_TA", "snssai": { "sst": 2, "sd": "000010" }, "trackingAreas": ["TA-102", "TA-201"] }
+    ]
+  },
+
+  "performance": {
+    "endpoint": "GET /performanceManagement/v4/measurement?relatedParty.id=CUST-1001",
+    "timestamp": "2026-10-19T10:00:00Z",
+    "slices": [
+      {
+        "snssai": { "sst": 1, "sd": "0000A1" },
+        "activeUEs": 212,
+        "activePduSessions": 230,
+        "dlThroughputMbps": 142.5,
+        "ulThroughputMbps": 38.2,
+        "avgLatencyMs": 18.4,
+        "p99LatencyMs": 41.0,
+        "packetLossPct": 0.04,
+        "resourceUtilizationPct": 47.5,
+        "availabilityLast30dPct": 99.95
+      },
+      {
+        "snssai": { "sst": 2, "sd": "000010" },
+        "activeUEs": 64,
+        "activePduSessions": 64,
+        "dlThroughputMbps": 6.1,
+        "ulThroughputMbps": 5.8,
+        "avgLatencyMs": 6.2,
+        "p99LatencyMs": 9.1,
+        "packetLossPct": 0.0007,
+        "resourceUtilizationPct": 30.5,
+        "availabilityLast30dPct": 99.992
+      },
+      {
+        "snssai": { "sst": 3, "sd": "000020" },
+        "activeUEs": 3180,
+        "activePduSessions": 3180,
+        "dlThroughputMbps": 0.9,
+        "ulThroughputMbps": 1.7,
+        "avgLatencyMs": 210.0,
+        "p99LatencyMs": 480.0,
+        "packetLossPct": 0.3,
+        "resourceUtilizationPct": 63.6,
+        "availabilityLast30dPct": 99.7
+      }
+    ]
+  },
+
+  "ursp": {
+    "description": "Traffic-to-slice steering rules pushed to Acme UEs",
+    "rules": [
+      { "precedence": 1, "trafficDescriptor": { "appId": "acme.plc.control" }, "routeSelection": { "snssai": { "sst": 2, "sd": "000010" }, "dnn": "acme-ctrl" } },
+      { "precedence": 2, "trafficDescriptor": { "appId": "acme.sensor.agent" }, "routeSelection": { "snssai": { "sst": 3, "sd": "000020" }, "dnn": "acme-iot" } },
+      { "precedence": 3, "trafficDescriptor": { "dnn": "acme-corp" }, "routeSelection": { "snssai": { "sst": 1, "sd": "0000A1" }, "dnn": "acme-corp" } },
+      { "precedence": 255, "trafficDescriptor": { "matchAll": true }, "routeSelection": { "snssai": { "sst": 1, "sd": "0000A1" }, "dnn": "acme-corp" } }
+    ]
+  }
+}

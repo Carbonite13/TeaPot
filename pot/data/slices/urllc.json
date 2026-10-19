@@ -1,0 +1,15 @@
+{
+  "category": "URLLC",
+  "display_name": "Ultra-Reliable Low-Latency Communications",
+  "profile_version": "1.0.0",
+  "targets": {
+    "latency_ms": 5.0,
+    "throughput_mbps": 10.0,
+    "reliability_per": 0.000001,
+    "mobility": ["stationary", "pedestrian", "vehicular", "high_speed"],
+    "device_density_per_km2": 1000,
+    "guaranteed_throughput": true,
+    "criticality": ["routine", "important", "life_safety"]
+  },
+  "source": "Simulation profile; values are engineering assumptions and are not asserted as standardized requirements."
+}
