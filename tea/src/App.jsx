@@ -7,13 +7,26 @@ function App() {
     <>
       <div className="ascii-background" aria-hidden="true">
         <GradientASCII
-          colors={['#e93e3a', '#ed683c', '#f3903f', '#fdc70c']}
+          colors={['#78201e', '#80361c', '#854b1d', '#8c6809']}
           shape="horizon"
           characters=" =+xX0S8#@"
           cellSize={18}
-          density={0.8}
+          density={0.75}
+          gradientOpacity={0.45}
+          glyphOpacity={0.5}
+          glow={0.08}
         />
       </div>
+      <header className="app-brand-header">
+        <div className="brand-logo-badge">
+          <img
+            src="/logo.svg"
+            alt="TeaPot Logo"
+            className="brand-logo-img"
+          />
+          <span className="brand-name">TeaPot</span>
+        </div>
+      </header>
       <main className="app-main">
         <NetworkSliceRecommender />
       </main>

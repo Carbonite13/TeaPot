@@ -26,7 +26,7 @@ export default function FuseButton({
   radius = 22,
   undoWindow = 4000,
   fuse = 'outline',
-  fuseThickness = 1.5,
+  fuseThickness = 1,
   crossfadeMs = 200,
   commitOn = 'press',
   pauseOnHover = true,
