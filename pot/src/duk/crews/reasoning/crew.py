@@ -84,8 +84,18 @@ class ReasoningCrew:
         return Crew(agents=self.agents, tasks=self.tasks, process=Process.sequential, verbose=False)
 
     def run(self, inputs: dict[str, Any]) -> tuple[Explanation, ReviewResult]:
-        """Kick off once and return typed outputs from both ordered tasks."""
-        result = self.crew().kickoff(inputs=inputs)
+        """Run the configured reasoner and retry once with its configured fallback."""
+        crew = self.crew()
+        try:
+            result = crew.kickoff(inputs=inputs)
+        except Exception:
+            fallback = model_config()["roles"]["reasoner"].get("fallback", [])
+            if not fallback:
+                raise
+            self.agents[0].llm = build_llm("reasoner", fallback[0])
+            result = Crew(agents=self.agents, tasks=self.tasks, process=Process.sequential, verbose=False).kickoff(
+                inputs=inputs
+            )
         explanation = result.tasks_output[0].pydantic
         review = result.tasks_output[1].pydantic
         if not isinstance(explanation, Explanation) or not isinstance(review, ReviewResult):

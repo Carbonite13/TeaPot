@@ -26,8 +26,8 @@ async def generate(payload: GenerateRequest, request: Request) -> JobAccepted:
     return JobAccepted(
         job_id=job_id,
         status="queued",
-        status_url=f"/generate/{job_id}",
-        events_url=f"/generate/{job_id}/events",
+        status_url=f"/api/v1/generate/{job_id}",
+        events_url=f"/api/v1/generate/{job_id}/events",
     )
 
 

@@ -21,6 +21,9 @@ duk = "duk.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.poetry]
+packages = [{ include = "duk", from = "src" }]
+
 [tool.crewai]
 type = "flow"
 

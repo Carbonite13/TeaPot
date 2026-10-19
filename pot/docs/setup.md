@@ -19,7 +19,23 @@ Do not commit `.env`. Model selection and generation settings live in `config/mo
 
 ## Current project status
 
-The repository is being built in stages. `docs/architecture.md` records the intended boundaries. Run the implemented tests with `poetry run pytest`.
+The FastAPI service, asynchronous decision jobs, simulated provider, CrewAI flows, and React interface are implemented. Run the test suite with `poetry run pytest`.
+
+## Run the service
+
+```bash
+poetry run uvicorn duk.main:app --reload --env-file .env
+```
+
+Open `http://localhost:8000/docs` for the generated API reference. Start the browser app in a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The browser app uses `http://localhost:8000/api/v1` by default. Set `VITE_API_BASE_URL` to change it.
 
 ## Standards use
 

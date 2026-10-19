@@ -34,9 +34,16 @@ class GenerateRequest(BaseModel):
 
     @model_validator(mode="after")
     def has_an_input_path(self) -> "GenerateRequest":
-        """Require enough information to build or describe a profile."""
-        if self.preset_name is None and not self.requirements.model_dump(exclude_none=True) and not self.description:
-            raise ValueError("Provide a preset_name, at least one requirement, or a description")
+        """Require a preset or a complete declared profile before queueing."""
+        if self.preset_name is None:
+            supplied = self.requirements.model_dump(exclude_none=True)
+            required = {
+                "latency_ms", "throughput_mbps", "throughput_guaranteed", "reliability_per",
+                "mobility", "device_density_per_km2", "arp_level", "criticality",
+            }
+            missing = sorted(required - supplied.keys())
+            if missing:
+                raise ValueError(f"A preset is required unless all requirements are supplied; missing: {', '.join(missing)}")
         return self
 
 
